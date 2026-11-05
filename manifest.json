@@ -1,1 +1,16 @@
-{"name":"Studio Foto — Jadwal & Bagi Hasil","short_name":"Studio Foto","start_url":"./","display":"standalone","background_color":"#F4FBFB","theme_color":"#11B3B1","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml"}]}
+{
+  "name": "FotoFauk Studio",
+  "short_name": "FotoFauk Studio",
+  "description": "Jadwal booking, pemasukan, pengeluaran, DP, laporan dan closing bulanan studio foto",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F6FBFB",
+  "theme_color": "#11B3B1",
+  "icons": [
+    { "src": "ikon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "ikon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
