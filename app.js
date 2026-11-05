@@ -38,6 +38,19 @@ const POS_OPS = [
 ];
 const posOps = k => k.pos || (POS_OPS.find(([, , re]) => re.test(k.nama || '')) || POS_OPS[POS_OPS.length - 1])[0];
 const namaPos = id => (POS_OPS.find(p => p[0] === id) || POS_OPS[POS_OPS.length - 1])[1];
+// Ukuran cetak yang dipakai studio + contoh bahan bingkai rekanan (foto "Contoh Bahan Bingkai")
+const UKURAN_CETAK = ['4R', '10R', '12R', '16R', '18R', '20R', '20Rs', '24R'];
+const BAHAN_BINGKAI = [
+  ['A', 'Polos · 10R–18R', ['A1 putih', 'A2 putih tulang', 'A3 hitam', 'A4 kayu natural', 'A5 coklat tua']],
+  ['B', 'Polos · 20R–24Rs', ['B1 putih', 'B2 putih tulang', 'B3 hitam', 'B4 kayu emas', 'B5 coklat tua']],
+  ['C', 'Ukir', ['C1 putih', 'C2 silver', 'C3 putih silver', 'C4 hitam', 'C5 hitam silver', 'C6 emas gelap', 'C7 emas', 'C8 emas tua']],
+  ['D', 'Ukir · 32R–60R', ['D1 putih', 'D2 putih ukir', 'D3 hitam silver', 'D4 emas', 'D5 hitam emas', 'D6 emas ukir']]
+];
+const grupBingkaiUntuk = u => ['20R', '20Rs', '24R', '24Rs'].includes(u) ? 'B' : 'A';
+const namaCetakKeluar = d => {
+  const kol = KOLOM_CETAK[d.cKolom] || '', b = /Bingkai/.test(kol) && d.cBingkai ? ` (${d.cBingkai.split(' ')[0]})` : '';
+  return `Cetak ${d.cUkuran} ${kol}`.replace(' Cetak', '').trim() + b;
+};
 const KOLOM_CETAK = ['Cetak', 'Canvas', '+ Canvas', '+ Bingkai 3cm', '+ Bingkai 3cm + Linen', '+ Bingkai 4,5cm', '+ Bingkai 4,5cm + Linen', '+ Bingkai 6cm', '+ Bingkai 6cm + Linen'];
 
 function dataAwal() {
@@ -971,16 +984,18 @@ function keluarBaru() {
 }
 function formKeluar() {
   const d = F, kunci = !!d.dari;
-  const ukuran = Object.keys(S.cetakHarga), arr = S.cetakHarga[d.cUkuran] || [];
+  const arr = S.cetakHarga[d.cUkuran] || [];
   const dis = kunci ? 'disabled' : '';
   return `${kepala(d.id ? 'Ubah pengeluaran' : 'Pengeluaran baru')}
   <div class="sheet-body">
     ${kunci ? '<div class="catatan" style="margin:0 0 12px">Baris ini dibuat otomatis dari pemasukan. Nominal diubah lewat pemasukannya; di sini cukup ubah status.</div>' : ''}
     ${kunci ? '' : bagian(1, 'Jenis pengeluaran', 'Untuk apa uangnya', segPenuh('jenis', [['lain', 'Operasional'], ['cetak', 'Cetak'], ['fee', 'Fee fotografer'], ['edit', 'Fee edit']], d.jenis, 'empat'))}
     ${bagian(kunci ? 1 : 2, 'Detail', 'Nama, harga, dan jumlah', `
-      ${!kunci && d.jenis === 'cetak' ? `<div class="grid2">
-        ${fld('Ukuran', `<select data-f="cUkuran"><option value="">— dari harga rekanan</option>${ukuran.map(u => `<option ${u === d.cUkuran ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select>`)}
-        ${fld('Jenis cetak', `<select data-f="cKolom">${KOLOM_CETAK.map((k, i) => arr[i] ? `<option value="${i}" ${i === d.cKolom ? 'selected' : ''}>${k} — ${rp(arr[i])}</option>` : '').join('')}</select>`)}</div>` : ''}
+      ${!kunci && d.jenis === 'cetak' ? `<div class="f"><span>Ukuran</span><div class="seg ukuran-cetak">${UKURAN_CETAK.map(u => `<button type="button" class="${u === d.cUkuran ? 'on' : ''}" data-act="pilihUkuran" data-v="${u}">${u}</button>`).join('')}</div></div>
+        ${d.cUkuran ? `<div class="grid2">
+          ${fld('Jenis cetak', `<select data-f="cKolom">${KOLOM_CETAK.map((k, i) => (arr[i] || !arr.some(Boolean)) ? `<option value="${i}" ${i === d.cKolom ? 'selected' : ''}>${k}${arr[i] ? ' — ' + rp(arr[i]) : ''}</option>` : '').join('')}</select>`, { bantu: arr.some(Boolean) ? 'harga rekanan terisi otomatis' : 'harga rekanan belum ada — isi harga manual' })}
+          ${/Bingkai/.test(KOLOM_CETAK[d.cKolom] || '') ? fld('Bahan bingkai', `<select data-f="cBingkai"><option value="">— pilih bahan</option>${BAHAN_BINGKAI.map(([g, judul, list]) => `<optgroup label="${g} · ${judul}${g === grupBingkaiUntuk(d.cUkuran) ? ' (cocok)' : ''}">${list.map(b => `<option ${b === d.cBingkai ? 'selected' : ''}>${b}</option>`).join('')}</optgroup>`).join('')}</select>`, { bantu: `untuk ${d.cUkuran} biasanya pakai seri ${grupBingkaiUntuk(d.cUkuran)}` }) : '<div></div>'}
+        </div>` : ''}` : ''}
       ${!kunci && d.jenis === 'lain' ? `<div class="f"><span>Pos operasional</span><div class="seg pos-ops">${POS_OPS.map(([id, n]) => `<button type="button" class="${(d.pos || posOps(d)) === id ? 'on' : ''}" data-act="setF" data-k="pos" data-v="${id}">${n}</button>`).join('')}</div><small class="bantu">${d.pos ? 'dipilih manual' : 'ditebak otomatis dari nama — ketuk untuk ganti'}</small></div>` : ''}
       ${!kunci && (d.jenis === 'fee' || d.jenis === 'edit') ? fld(d.jenis === 'fee' ? 'Fotografer' : 'Editor', pilihan('fotografer', d.jenis === 'fee' ? S.fotografer : S.editor, d.fotografer, '—')) : ''}
       ${fld('Pengeluaran', `<input class="besar" data-f="nama" value="${esc(d.nama)}" placeholder="mis. galon, lakban, listrik" ${dis}>`, { wajib: true })}
@@ -1007,7 +1022,8 @@ function formKeluar() {
 function simpanKeluar() {
   if (!F.nama.trim()) return toast('Isi nama pengeluaran dulu');
   const k = { ...F, nama: F.nama.trim(), jumlah: Number(F.jumlah) || 1 };
-  delete k.cUkuran; delete k.cKolom;
+  if (k.jenis === 'cetak' && F.cBingkai && /Bingkai/.test(KOLOM_CETAK[F.cKolom] || '')) k.bingkai = F.cBingkai;
+  delete k.cUkuran; delete k.cKolom; delete k.cBingkai;
   if (!k.id) { k.id = uid(); S.keluar.push(k); } else S.keluar[S.keluar.findIndex(x => x.id === k.id)] = k;
   simpan(); tutupModal(); render(); toast('Pengeluaran tersimpan');
 }
@@ -1041,6 +1057,14 @@ const AKSI = {
   filterKas: el => { filterKas = el.dataset.v; render(); },
   hapusCari: () => { cari = ''; render(); },
   menuTambah,
+  pilihUkuran: el => {
+    F.cUkuran = el.dataset.v; const arr = S.cetakHarga[F.cUkuran] || [];
+    if (!(F.cKolom >= 0) || (arr.some(Boolean) && !arr[F.cKolom])) F.cKolom = arr[3] ? 3 : Math.max(0, arr.findIndex(Boolean));
+    if (!arr.some(Boolean) && !(F.cKolom >= 0)) F.cKolom = 0;
+    if (F.cBingkai && F.cBingkai[0] !== grupBingkaiUntuk(F.cUkuran) && F.cBingkai[0] !== 'C') F.cBingkai = '';
+    if (arr[F.cKolom]) F.nominal = arr[F.cKolom];
+    F.nama = namaCetakKeluar(F); gambarUlangForm();
+  },
   gantiFont: el => { S.setelan.font = el.dataset.v; simpan(); render(); toast('Font: ' + el.dataset.v); },
   tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), keluar: keluarBaru })[v](); },
   tambah: () => ({ jadwal: jadwalBaru, masuk: () => masukBaru(), keluar: keluarBaru }[tab] || (() => {}))(),
@@ -1193,11 +1217,11 @@ document.addEventListener('change', e => {
     c.ukuran = v; if (!arr[c.kolom]) c.kolom = arr.findIndex(Boolean); c.harga = arr[c.kolom] || 0;
   } else if (k === 'cKolom' && formJenis === 'masuk') {
     const c = F.cetak[el.dataset.i]; c.kolom = Number(v); c.harga = S.cetakHarga[c.ukuran]?.[c.kolom] || 0;
-  } else if ((k === 'cUkuran' || k === 'cKolom') && formJenis === 'keluar') {
-    if (k === 'cUkuran') { F.cUkuran = v; const arr = S.cetakHarga[v] || []; F.cKolom = arr[3] ? 3 : arr.findIndex(Boolean); }
-    else F.cKolom = Number(v);
+  } else if ((k === 'cKolom' || k === 'cBingkai') && formJenis === 'keluar') {
+    if (k === 'cKolom') F.cKolom = Number(v); else F.cBingkai = v;
     const h = S.cetakHarga[F.cUkuran]?.[F.cKolom];
-    if (h) { F.nominal = h; F.nama = `Cetak ${F.cUkuran} ${KOLOM_CETAK[F.cKolom]}`.replace(' Cetak', ''); }
+    if (h) F.nominal = h;
+    F.nama = namaCetakKeluar(F);
   } else {
     F[k] = v;
     if (formJenis === 'masuk') {
