@@ -108,7 +108,7 @@ function muat() {
   return dataAwal();
 }
 let S = muat();
-function simpan() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Gagal menyimpan di perangkat ini'); } }
+function simpan() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Gagal menyimpan di perangkat ini'); } window.setelahSimpan?.(); }
 function ui(k, v) { try { if (v === undefined) return localStorage.getItem('sf_' + k); localStorage.setItem('sf_' + k, v); } catch (e) {} }
 
 const hariIni = iso(new Date());
@@ -707,6 +707,7 @@ function viewAtur() {
     <div class="card lebar"><h2>Harga cetak rekanan (biaya cetak)</h2>
       <div class="scroll-x"><table class="tabel tabel-in tabel-cetak"><thead><tr><th>Ukuran</th>${KOLOM_CETAK.map(k => `<th>${k}</th>`).join('')}</tr></thead><tbody>${cetakRows}</tbody></table></div>
       <div class="catatan">3R–18R pakai bahan bingkai 3 cm, 20R–36R pakai 4,5 cm / 6 cm. Kosong = tidak tersedia.</div></div>
+    ${typeof kartuDatabase === 'function' ? kartuDatabase() : ''}
     <div class="card lebar"><h2>Data</h2>
       <div class="baris"><div class="isi"><b>Backup data</b><span>Simpan semua jadwal, pemasukan, pengeluaran & pengaturan ke file JSON.</span></div><button class="btn btn-kecil" data-act="backup">Unduh backup</button></div>
       <div class="baris"><div class="isi"><b>Pulihkan dari backup</b><span>Menimpa data di perangkat ini dengan isi file backup.</span></div><button class="btn btn-kecil" data-act="restore">Pilih file</button></div>
