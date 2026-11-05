@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Studio Foto — Laporan</title>
+<meta name="theme-color" content="#11B3B1">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=5">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icon.svg" alt=""><span id="namaStudio">Studio Foto</span></div>
+  <nav class="tabs" id="tabs" aria-label="Menu utama">
+    <button data-act="tab" data-tab="jadwal">Jadwal</button>
+    <button data-act="tab" data-tab="masuk">Pemasukan</button>
+    <button data-act="tab" data-tab="keluar">Pengeluaran</button>
+    <button data-act="tab" data-tab="laba">Laporan</button>
+    <button data-act="tab" data-tab="atur">Atur</button>
+  </nav>
+  <button class="btn btn-utama top-baru" data-act="tambah">+ Tambah</button>
+</header>
+<main id="view" tabindex="-1"></main>
+<button class="fab" data-act="tambah" aria-label="Tambah data">+</button>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<input type="file" id="fileRestore" accept="application/json" hidden>
+<script src="seed_oktober.js"></script>
+<script src="seed_november.js"></script>
+<script src="charts.js?v=5"></script>
+<script src="app.js?v=5"></script>
+<script src="closing.js?v=5"></script>
+</body>
+</html>

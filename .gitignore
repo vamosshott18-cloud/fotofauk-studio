@@ -1,0 +1,7 @@
+# data asli & dokumen internal — hanya di Mac, tidak dipublikasikan
+seed_*.js
+ref/
+CLOSING/
+kirim_wa.js
+.DS_Store
+.wwebjs_cache/
