@@ -1,4 +1,4 @@
-// FotoFauk Studio — database di Google Sheet (akun fotofauk@gmail.com).
+// FotoFauk Studio — database di Google Sheet (akun studio faublade01@gmail.com).
 // Semua HP/PC yang tersambung membaca & menulis ke sheet "data" ini.
 // Satu baris = satu catatan: koleksi (jadwal/masuk/keluar/setelan), id, diubah (waktu server, ms), hapus, json.
 //
@@ -27,7 +27,7 @@ function doGet() {
   return json_({ ok: true, aplikasi: 'FotoFauk Studio' });
 }
 
-// {aksi:'kirim', rows:[{koleksi,id,hapus,data}], sejak} → simpan, lalu kembalikan semua baris yang berubah sejak `sejak`
+// {aksi:'kirim', rows:[{koleksi,id,hapus,data}], sejak} → simpan, lalu kembalikan semua baris yang berubah sejak "sejak"
 // {aksi:'tarik', sejak} → hanya kembalikan perubahan
 function doPost(e) {
   let req;

@@ -1,5 +1,5 @@
 'use strict';
-// Sinkron ke Google Sheet (Apps Script di akun fotofauk). Tanpa PIN: alamat database disimpan per perangkat
+// Sinkron ke Google Sheet (Apps Script di akun studio faublade01). Tanpa PIN: alamat database disimpan per perangkat
 // lewat "link sambung" (?db=…) dan TIDAK ada di kode/GitHub. Tanpa alamat, aplikasi tetap jalan lokal seperti biasa.
 //
 // Cara kerja: setiap simpan() → bandingkan tiap catatan dengan versi terakhir yang sudah terkirim → kirim yang berubah
@@ -114,7 +114,7 @@ function putuskan() {
 
 function kartuDatabase() {
   return `<div class="card lebar"><h2>Database Google Sheet</h2>
-    <div class="baris"><span class="status-db ${statusSinkron}"></span><div class="isi"><b id="teksStatusDb">${TEKS_STATUS[statusSinkron]}</b><span>${dbUrl ? 'Semua perangkat yang tersambung memakai data yang sama (akun fotofauk).' : 'Perangkat ini belum tersambung — data hanya ada di browser ini.'}</span></div>
+    <div class="baris"><span class="status-db ${statusSinkron}"></span><div class="isi"><b id="teksStatusDb">${TEKS_STATUS[statusSinkron]}</b><span>${dbUrl ? 'Semua perangkat yang tersambung memakai data yang sama (akun studio).' : 'Perangkat ini belum tersambung — data hanya ada di browser ini.'}</span></div>
       ${dbUrl ? '<button class="btn btn-kecil" data-act="sinkronSekarang">Sinkron sekarang</button>' : ''}</div>
     ${dbUrl ? `<div class="baris"><div class="isi"><b>Link sambung perangkat</b><span>Buka link ini sekali di HP/PC tim supaya tersambung. Bagikan ke tim saja — siapa pun yang punya link bisa melihat data.</span></div><button class="btn btn-kecil" data-act="salinLinkDb">Salin link</button></div>
       <div class="baris"><div class="isi"><b>Putuskan perangkat ini</b><span>Data di Sheet tetap aman; perangkat ini kembali lokal.</span></div><button class="btn btn-kecil btn-hapus" data-act="putuskanDb">Putuskan</button></div>`
