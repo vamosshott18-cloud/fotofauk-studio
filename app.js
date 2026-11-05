@@ -998,7 +998,9 @@ function formKeluar() {
         </div>` : ''}` : ''}
       ${!kunci && d.jenis === 'lain' ? `<div class="f"><span>Pos operasional</span><div class="seg pos-ops">${POS_OPS.map(([id, n]) => `<button type="button" class="${(d.pos || posOps(d)) === id ? 'on' : ''}" data-act="setF" data-k="pos" data-v="${id}">${n}</button>`).join('')}</div><small class="bantu">${d.pos ? 'dipilih manual' : 'ditebak otomatis dari nama — ketuk untuk ganti'}</small></div>` : ''}
       ${!kunci && (d.jenis === 'fee' || d.jenis === 'edit') ? fld(d.jenis === 'fee' ? 'Fotografer' : 'Editor', pilihan('fotografer', d.jenis === 'fee' ? S.fotografer : S.editor, d.fotografer, '—')) : ''}
-      ${fld('Pengeluaran', `<input class="besar" data-f="nama" value="${esc(d.nama)}" placeholder="mis. galon, lakban, listrik" ${dis}>`, { wajib: true })}
+      ${!kunci && d.jenis === 'cetak'
+        ? fld('Keterangan', `<input data-f="nama" value="${esc(d.nama)}" placeholder="opsional, mis. untuk Rani, cetak ulang">`, { bantu: d.cUkuran ? `tercatat sebagai: <b>${esc(namaCetakKeluar(d))}${d.nama.trim() ? ' · ' + esc(d.nama.trim()) : ''}</b>` : 'pilih ukuran supaya nama terisi otomatis' })
+        : fld('Pengeluaran', `<input class="besar" data-f="nama" value="${esc(d.nama)}" placeholder="mis. galon, lakban, listrik" ${dis}>`, { wajib: true })}
       <div class="grid2">
         ${fld('Harga satuan', kunci ? `<input value="${titik(d.nominal)}" disabled>` : uang('nominal', d.nominal), { wajib: true })}
         ${fld('Jumlah', `<input type="number" min="1" data-f="jumlah" value="${d.jumlah}" ${dis}>`)}
@@ -1020,8 +1022,11 @@ function formKeluar() {
   </div>`;
 }
 function simpanKeluar() {
-  if (!F.nama.trim()) return toast('Isi nama pengeluaran dulu');
-  const k = { ...F, nama: F.nama.trim(), jumlah: Number(F.jumlah) || 1 };
+  // Cetak: nama otomatis dari ukuran + jenis cetak + bahan; keterangan opsional ditambahkan di belakang
+  const cetakBaru = F.jenis === 'cetak' && !F.dari, otomatis = cetakBaru && F.cUkuran ? namaCetakKeluar(F) : '', ket = F.nama.trim();
+  const nama = cetakBaru ? (otomatis ? otomatis + (ket ? ' · ' + ket : '') : ket || 'Cetak') : ket;
+  if (!nama) return toast('Isi nama pengeluaran dulu');
+  const k = { ...F, nama, jumlah: Number(F.jumlah) || 1 };
   if (k.jenis === 'cetak' && F.cBingkai && /Bingkai/.test(KOLOM_CETAK[F.cKolom] || '')) k.bingkai = F.cBingkai;
   delete k.cUkuran; delete k.cKolom; delete k.cBingkai;
   if (!k.id) { k.id = uid(); S.keluar.push(k); } else S.keluar[S.keluar.findIndex(x => x.id === k.id)] = k;
@@ -1063,7 +1068,7 @@ const AKSI = {
     if (!arr.some(Boolean) && !(F.cKolom >= 0)) F.cKolom = 0;
     if (F.cBingkai && F.cBingkai[0] !== grupBingkaiUntuk(F.cUkuran) && F.cBingkai[0] !== 'C') F.cBingkai = '';
     if (arr[F.cKolom]) F.nominal = arr[F.cKolom];
-    F.nama = namaCetakKeluar(F); gambarUlangForm();
+    gambarUlangForm();
   },
   gantiFont: el => { S.setelan.font = el.dataset.v; simpan(); render(); toast('Font: ' + el.dataset.v); },
   tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), keluar: keluarBaru })[v](); },
@@ -1221,7 +1226,6 @@ document.addEventListener('change', e => {
     if (k === 'cKolom') F.cKolom = Number(v); else F.cBingkai = v;
     const h = S.cetakHarga[F.cUkuran]?.[F.cKolom];
     if (h) F.nominal = h;
-    F.nama = namaCetakKeluar(F);
   } else {
     F[k] = v;
     if (formJenis === 'masuk') {
