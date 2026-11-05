@@ -688,3 +688,10 @@ h1{font-size:26px} h2{font-size:18px}
 @media (min-width:901px){ .beranda{grid-template-areas:"sapa sapa" "saldo kanan" "menu kanan" ". kanan";grid-template-rows:auto auto auto 1fr} }
 .seg.ukuran-cetak{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
 .seg.ukuran-cetak button{padding:9px 4px;font-size:14px}
+
+/* kartu pelunasan */
+.pilih-tambah button{position:relative}
+.hitung-dp{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-style:normal;font-weight:800;font-size:12px;min-width:24px;height:24px;border-radius:999px;background:#FFF1D6;color:#7A4A06;display:flex;align-items:center;justify-content:center;padding:0 7px}
+.sisa-lunas{margin-left:auto;text-align:right;font-weight:800;font-size:14px;white-space:nowrap}
+.sisa-lunas small{display:block;font-weight:600;font-size:11px;color:var(--muted)}
+.pilih-tambah button>span:not(.sisa-lunas){min-width:0}

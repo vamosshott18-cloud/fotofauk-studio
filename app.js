@@ -276,6 +276,7 @@ const IKON = {
   dp: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/>', fee: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.5M18 19a5 5 0 0 0-2.5-4.3"/>',
   laporan: '<path d="M5 20V11M12 20V5M19 20v-6"/>', closing: '<path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21z"/><path d="M10 8h4M10 12h4"/>',
   atur: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+  lunas: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>',
   booking: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M12 11v6M9 14h6"/>'
 };
 const ikon = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${IKON[k]}</svg>`;
@@ -350,9 +351,23 @@ function viewKas() {
 
 function menuTambah() {
   formJenis = null;
-  const opsi = [['jadwal', 'booking', 'Booking / jadwal', 'Customer, paket, add-on, tanggal foto'], ['masuk', 'masuk', 'Pemasukan', 'Pembayaran lunas dari customer'], ['dp', 'dp', 'DP', 'Uang muka — belum dihitung pemasukan'], ['keluar', 'keluar', 'Pengeluaran', 'Fee, cetak, operasional']];
+  const nDp = S.masuk.filter(m => m.bayar === 'dp').length;
+  const opsi = [['jadwal', 'booking', 'Booking / jadwal', 'Customer, paket, add-on, tanggal foto'], ['masuk', 'masuk', 'Pemasukan', 'Pembayaran lunas dari customer'], ['dp', 'dp', 'DP', 'Uang muka — belum dihitung pemasukan'],
+    ['lunas', 'lunas', 'Pelunasan', nDp ? `${nDp} customer masih DP — pilih untuk dilunasi` : 'Belum ada DP yang perlu dilunasi'], ['keluar', 'keluar', 'Pengeluaran', 'Fee, cetak, operasional']];
   bukaModal(`<div class="sheet-head"><h2>Tambah</h2><button class="x" data-act="tutup" aria-label="Tutup">×</button></div>
-  <div class="sheet-body"><div class="pilih-tambah">${opsi.map(([v, ik, n, d]) => `<button class="tk" data-act="tambahJenis" data-v="${v}"><i class="kas-ik ${v === 'jadwal' ? 'masuk' : v}">${ikon(ik)}</i><span><b>${n}</b><small>${d}</small></span></button>`).join('')}</div></div>`, 'kecil');
+  <div class="sheet-body"><div class="pilih-tambah">${opsi.map(([v, ik, n, d]) => `<button class="tk" data-act="tambahJenis" data-v="${v}"><i class="kas-ik ${v === 'jadwal' || v === 'lunas' ? 'masuk' : v}">${ikon(ik)}</i><span><b>${n}</b><small>${d}</small></span>${v === 'lunas' && nDp ? `<em class="hitung-dp">${nDp}</em>` : ''}</button>`).join('')}</div></div>`, 'kecil');
+}
+
+// Kartu pelunasan: semua customer yang masih DP, klik untuk melunasi
+function daftarPelunasan() {
+  formJenis = null;
+  const list = S.masuk.filter(m => m.bayar === 'dp').sort((a, b) => (a.tglDp || a.tanggal).localeCompare(b.tglDp || b.tanggal));
+  bukaModal(`<div class="sheet-head"><h2>Pelunasan</h2><button class="x" data-act="tutup" aria-label="Tutup">×</button></div>
+  <div class="sheet-body">${list.length ? `<p class="bantu" style="margin:0 0 10px">${list.length} customer masih DP · total sisa tagihan ${rp(list.reduce((s, m) => s + sisaTagihan(m), 0))}</p>
+    <div class="pilih-tambah">${list.map(m => `<button class="tk" data-act="bukaLunas" data-id="${m.id}"><i class="kas-ik dp">${ikon('dp')}</i>
+      <span><b>${esc(m.customer)}</b><small>${esc(namaPaket(m))} · DP ${rp(m.dp)} tgl ${esc(tglPendek(m.tglDp || m.tanggal))}</small></span>
+      <span class="sisa-lunas tnum"><small>sisa</small>${rp(sisaTagihan(m))}</span></button>`).join('')}</div>`
+    : '<div class="kosong">Belum ada customer yang DP.</div>'}</div>`, 'kecil');
 }
 
 function blokDp(p, untukLaporan) {
@@ -380,20 +395,36 @@ function formLunas() {
   const m = S.masuk.find(x => x.id === F.id);
   return `${kepala('Pelunasan')}
   <div class="sheet-body">
-    ${bagian(1, 'Booking', esc(m.customer), `<div class="ringkas" style="margin:0">
-      <div class="row"><span>${esc(namaPaket(m))}</span><span class="tnum">${rp(jumlahMasuk(m))}</span></div>
-      <div class="row"><span>DP tgl ${esc(tglPanjang(m.tglDp || m.tanggal))}</span><span class="tnum">− ${rp(m.dp)}</span></div>
-      <div class="row total"><span>Dibayar sekarang (pelunasan)</span><b class="tnum">${rp(sisaTagihan(m))}</b></div></div>`)}
-    ${bagian(2, 'Tanggal pelunasan', 'Total penuh dicatat sebagai pemasukan di bulan ini', `
-      ${fld('Tanggal lunas', `<input type="date" data-f="tanggal" value="${esc(F.tanggal)}">`, { wajib: true })}
-      <div class="catatan" style="margin:0" id="lunasInfo">${rp(jumlahMasuk(m))} masuk <b>pemasukan ${BULAN[keTgl(F.tanggal).getMonth()]} ${F.tanggal.slice(0, 4)}</b>, catatan DP-nya dihapus dari blok DP. Fee & cetak ikut dicatat di bulan ini.</div>`)}
+    ${bagian(1, esc(m.customer), esc(namaPaket(m)), `<div class="ringkas" style="margin:0">
+      <div class="row"><span>Total booking</span><span class="tnum">${rp(jumlahMasuk(m))}</span></div>
+      <div class="row"><span>DP sudah dibayar · ${esc(tglPendek(m.tglDp || m.tanggal))}</span><span class="tnum">− ${rp(m.dp)}</span></div>
+      <div class="row total"><span>Sisa tagihan</span><b class="tnum">${rp(sisaTagihan(m))}</b></div></div>`)}
+    ${bagian(2, 'Pelunasan', 'Nominal yang dibayar sekarang', `
+      <div class="grid2">
+        ${fld('Nominal pelunasan', uang('bayarLunas', F.bayarLunas), { wajib: true, bantu: 'terisi sisa tagihan, ubah kalau beda' })}
+        ${fld('Tanggal lunas', `<input type="date" data-f="tanggal" value="${esc(F.tanggal)}">`, { wajib: true })}
+      </div>
+      <div class="catatan" style="margin:0" id="lunasInfo">${infoLunas(m)}</div>`)}
   </div>
-  <div class="sheet-foot"><span class="spacer"></span><button class="btn" data-act="tutup">Batal</button><button class="btn btn-utama" data-act="simpanLunas">Tandai lunas</button></div>`;
+  <div class="sheet-foot"><span class="spacer"></span><button class="btn" data-act="tutup">Batal</button><button class="btn btn-utama" data-act="simpanLunas">Simpan pelunasan</button></div>`;
+}
+function infoLunas(m) {
+  const total = (Number(m.dp) || 0) + (Number(F.bayarLunas) || 0), beda = total - jumlahMasuk(m), d = F.tanggal ? keTgl(F.tanggal) : null;
+  return `DP ${rp(m.dp)} + pelunasan ${rp(F.bayarLunas || 0)} = <b>${rp(total)}</b> masuk pemasukan <b>${d ? BULAN[d.getMonth()] + ' ' + d.getFullYear() : '—'}</b>. Data DP-nya dihapus dari daftar DP.${beda ? `<br><span style="color:${beda < 0 ? '#B23A2F' : '#0B6B6A'}">${beda < 0 ? 'Kurang' : 'Lebih'} ${rp(Math.abs(beda))} dari total booking — dicatat sebagai ${beda < 0 ? 'potongan' : 'tambahan'} pelunasan.</span>` : ''}`;
 }
 function simpanLunas() {
   if (!F.tanggal) return toast('Isi tanggal lunas');
-  const m = S.masuk.find(x => x.id === F.id);
-  Object.assign(m, { bayar: 'lunas', tglLunas: F.tanggal, tanggal: F.tanggal, bulan: bulanDari(F.tanggal), waktu: jamSekarang() });
+  const m = S.masuk.find(x => x.id === F.id), bayar = Number(F.bayarLunas) || 0;
+  if (!(bayar > 0) && sisaTagihan(m) > 0) return toast('Isi nominal pelunasan');
+  const beda = (Number(m.dp) || 0) + bayar - jumlahMasuk(m), qty = Number(m.qty) || 1;
+  if (beda) {   // pelunasan beda dari sisa tagihan → selisih dicatat sebagai penyesuaian supaya total = DP + pelunasan
+    m.nominal = (m.tambahan === 'ADA' ? Number(m.nominal) || 0 : 0) + beda / qty;
+    m.ket = [m.tambahan === 'ADA' ? m.ket : '', `${beda < 0 ? 'potongan' : 'tambahan'} pelunasan ${rp(Math.abs(beda))}`].filter(Boolean).join(' · ');
+    if (m.tambahan !== 'ADA') m.tipeTambah = beda < 0 ? 'diskon' : 'tambah';
+    m.tambahan = 'ADA';
+    if (!m.feeManual) m.feeRp = feeOtomatis(m);
+  }
+  Object.assign(m, { bayar: 'lunas', tglLunas: F.tanggal, tanggal: F.tanggal, bulan: bulanDari(F.tanggal), waktu: jamSekarang(), lunasNominal: bayar });
   sinkronKeluar(m); simpan(); tutupModal(); render();
   toast(`Lunas — ${rp(jumlahMasuk(m))} masuk pemasukan ${BULAN[keTgl(m.tanggal).getMonth()]}`);
 }
@@ -1049,7 +1080,7 @@ const AKSI = {
   menuTambah,
   pilihUkuran: el => { const u = el.dataset.v; F.cUkuran = F.cUkuran.includes(u) ? F.cUkuran.filter(x => x !== u) : UKURAN_CETAK.filter(x => x === u || F.cUkuran.includes(x)); gambarUlangForm(); },
   gantiFont: el => { S.setelan.font = el.dataset.v; simpan(); render(); toast('Font: ' + el.dataset.v); },
-  tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), keluar: keluarBaru })[v](); },
+  tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), lunas: daftarPelunasan, keluar: keluarBaru })[v](); },
   tambah: () => ({ jadwal: jadwalBaru, masuk: () => masukBaru(), keluar: keluarBaru }[tab] || (() => {}))(),
   pilihHari: el => { hariPilih = el.dataset.tgl; render(); },
   bulanKal: el => { bulanKal = new Date(bulanKal.getFullYear(), bulanKal.getMonth() + Number(el.dataset.d), 1); render(); },
@@ -1074,7 +1105,7 @@ const AKSI = {
     gambarUlangForm();
   },
   dpAuto: () => { F.dpManual = false; hitungFee(); gambarUlangForm(); },
-  bukaLunas: el => { F = { id: el.dataset.id, tanggal: hariIni }; formJenis = 'lunas'; bukaModal(formLunas()); },
+  bukaLunas: el => { const m = S.masuk.find(x => x.id === el.dataset.id); F = { id: m.id, tanggal: hariIni, bayarLunas: sisaTagihan(m) }; formJenis = 'lunas'; bukaModal(formLunas()); },
   simpanLunas,
   feeAuto: () => { F.feeManual = false; hitungFee(); gambarUlangForm(); },
   // jadwal
@@ -1180,7 +1211,7 @@ document.addEventListener('input', e => {
     if (k === 'tanggal') { const s = document.querySelector('select[data-f=bulan]'); if (s) s.value = F.bulan; }
   } else if (formJenis === 'lunas') {
     const m = S.masuk.find(x => x.id === F.id), li = $('#lunasInfo');
-    if (li && v) li.innerHTML = `${rp(jumlahMasuk(m))} masuk <b>pemasukan ${BULAN[keTgl(v).getMonth()]} ${v.slice(0, 4)}</b>, catatan DP-nya dihapus dari blok DP. Fee & cetak ikut dicatat di bulan ini.`;
+    if (li) li.innerHTML = infoLunas(m);
   } else if (formJenis === 'jadwal') {
     if (k === 'tanggal') $('#hariJadwal').textContent = v ? 'Fotoshoot: ' + tglPanjang(v) : 'Pilih tanggal fotoshoot';
     segarkanJadwal();
