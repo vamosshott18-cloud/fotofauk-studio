@@ -3,36 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Studio Foto — Laporan</title>
+<title>fotofauk.studio</title>
 <meta name="theme-color" content="#11B3B1">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Manrope:wght@400..800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css?v=5">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400..900&family=Plus+Jakarta+Sans:wght@400..800&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=6">
 </head>
 <body>
 <header class="top">
-  <div class="brand"><img src="icon.svg" alt=""><span id="namaStudio">Studio Foto</span></div>
+  <div class="brand"><img src="icon.svg" alt=""><span id="namaStudio">fotofauk.studio</span></div>
+  <label class="cari-top"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariTop" type="search" placeholder="Cari customer, paket, pengeluaran" autocomplete="off"></label>
   <nav class="tabs" id="tabs" aria-label="Menu utama">
-    <button data-act="tab" data-tab="jadwal">Jadwal</button>
-    <button data-act="tab" data-tab="masuk">Pemasukan</button>
-    <button data-act="tab" data-tab="keluar">Pengeluaran</button>
-    <button data-act="tab" data-tab="laba">Laporan</button>
-    <button data-act="tab" data-tab="atur">Atur</button>
+    <button data-act="tab" data-tab="beranda"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg><span>Beranda</span></button>
+    <button data-act="tab" data-tab="jadwal"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/></svg><span>Jadwal</span></button>
+    <button data-act="tab" data-tab="kas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v4l3 2"/><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4"/></svg><span>Riwayat</span></button>
+    <button data-act="tab" data-tab="laba"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>Laporan</span></button>
   </nav>
-  <button class="btn btn-utama top-baru" data-act="tambah">+ Tambah</button>
+  <button class="ikon-atur" data-act="tab" data-tab="atur" aria-label="Pengaturan"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  <button class="btn btn-utama top-baru" data-act="menuTambah">+ Tambah</button>
 </header>
 <main id="view" tabindex="-1"></main>
-<button class="fab" data-act="tambah" aria-label="Tambah data">+</button>
+<button class="fab" data-act="menuTambah" aria-label="Tambah data">+</button>
 <div id="modal" class="modal" hidden></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileRestore" accept="application/json" hidden>
 <script src="seed_oktober.js"></script>
 <script src="seed_november.js"></script>
-<script src="charts.js?v=5"></script>
-<script src="app.js?v=5"></script>
-<script src="closing.js?v=5"></script>
+<script src="charts.js?v=6"></script>
+<script src="app.js?v=6"></script>
+<script src="closing.js?v=6"></script>
 </body>
 </html>

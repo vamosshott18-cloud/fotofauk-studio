@@ -109,7 +109,9 @@ function simpan() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch 
 function ui(k, v) { try { if (v === undefined) return localStorage.getItem('sf_' + k); localStorage.setItem('sf_' + k, v); } catch (e) {} }
 
 const hariIni = iso(new Date());
-let tab = ui('tab') || 'jadwal';
+let tab = ui('tab') || 'beranda';
+if (!['beranda', 'jadwal', 'kas', 'masuk', 'keluar', 'laba', 'atur'].includes(tab)) tab = 'beranda';
+let filterKas = 'semua', cari = '', animasi = true;
 let hariPilih = hariIni;
 let bulanKal = keTgl(hariIni.slice(0, 8) + '01');
 let periode = hariIni.slice(0, 7); // 'YYYY-MM' atau 'semua'
@@ -172,15 +174,28 @@ function dataBulan(p) {
 }
 
 // ---------- render ----------
+// Nama studio ditulis gaya logo: "FotoFauk Studio" → fotofauk.studio
+const namaLogo = n => { const p = String(n || 'Studio Foto').trim().toLowerCase().split(/\s+/); return esc(p.slice(0, -1).join('')) + (p.length > 1 ? '<b>.</b>' : '') + esc(p[p.length - 1]); };
+const FONT_UI = ['Nunito', 'Plus Jakarta Sans', 'Poppins'];
 function render() {
-  $('#namaStudio').textContent = S.setelan.nama || 'Studio Foto';
-  document.title = (S.setelan.nama || 'Studio Foto') + ' — Laporan';
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const v = { jadwal: viewJadwal, masuk: viewMasuk, keluar: viewKeluar, laba: viewLaporan, atur: viewAtur }[tab] || viewJadwal;
-  $('#view').innerHTML = v();
+  document.documentElement.style.setProperty('--font-ui', `"${S.setelan.font || 'Nunito'}"`);
+  $('#namaStudio').innerHTML = namaLogo(S.setelan.nama);
+  document.title = S.setelan.nama || 'Studio Foto';
+  const navAktif = tab === 'masuk' || tab === 'keluar' ? 'kas' : tab;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === navAktif));
+  const v = { beranda: viewBeranda, jadwal: viewJadwal, kas: viewKas, masuk: viewMasuk, keluar: viewKeluar, laba: viewLaporan, atur: viewAtur }[tab] || viewBeranda;
+  const view = $('#view');
+  view.innerHTML = v();
+  view.classList.toggle('animasi', animasi); animasi = false;   // animasi masuk hanya saat pindah halaman
   if (tab === 'laba') gambarGrafik();
-  const tombol = { jadwal: '+ Jadwal', masuk: '+ Pemasukan', keluar: '+ Pengeluaran' }[tab];
-  document.querySelectorAll('[data-act=tambah]').forEach(b => { b.hidden = !tombol; if (b.classList.contains('top-baru')) b.textContent = tombol || ''; });
+  view.querySelectorAll('[data-hitung]').forEach(hitungNaik);
+  const ct = $('#cariTop'); if (ct && document.activeElement !== ct) ct.value = cari;
+}
+// angka berjalan naik (ease-out ~0,9 dtk)
+function hitungNaik(el) {
+  const t = Number(el.dataset.hitung) || 0, mulai = performance.now();
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !el.closest('.animasi')) { el.textContent = rp(t); return; }
+  (function f(n) { const p = Math.min(1, (n - mulai) / 900), e = 1 - Math.pow(1 - p, 3); el.textContent = rp(t * e); if (p < 1) requestAnimationFrame(f); })(mulai);
 }
 
 function pilihPeriode(denganSemua) {
@@ -249,6 +264,92 @@ function viewJadwal() {
       </div>
     </section>
   </div>`;
+}
+
+// ---------- Beranda (gaya super-app) ----------
+const IKON = {
+  jadwal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M4 10h16"/>',
+  masuk: '<path d="M17 7L7 17M7 9v8h8"/>', keluar: '<path d="M7 17L17 7M9 7h8v8"/>',
+  dp: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/>', fee: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.5M18 19a5 5 0 0 0-2.5-4.3"/>',
+  laporan: '<path d="M5 20V11M12 20V5M19 20v-6"/>', closing: '<path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21z"/><path d="M10 8h4M10 12h4"/>',
+  atur: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+  booking: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M12 11v6M9 14h6"/>'
+};
+const ikon = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${IKON[k]}</svg>`;
+
+function viewBeranda() {
+  const p = hariIni.slice(0, 7), D = dataBulan(p), dp = dataDp(p), dpList = [...dp.ini, ...dp.lama];
+  const hariIniList = S.jadwal.filter(j => j.tanggal === hariIni).sort((a, b) => menit(a.jam) - menit(b.jam));
+  const besok = iso(new Date(Date.now() + 864e5)), besokList = S.jadwal.filter(j => j.tanggal === besok);
+  const feeBelum = S.keluar.filter(k => k.status === 'BELUM' && (k.jenis === 'fee' || k.jenis === 'edit'));
+  const jam = new Date().getHours(), sapa = jam < 11 ? 'Selamat pagi' : jam < 15 ? 'Selamat siang' : jam < 19 ? 'Selamat sore' : 'Selamat malam';
+  const menu = [['jadwal', 'Jadwal', 'a1', 'buka', 'jadwal'], ['masuk', 'Pemasukan', 'a1', 'buka', 'masuk'], ['keluar', 'Pengeluaran', 'a4', 'buka', 'keluar'], ['dp', 'DP', 'a3', 'bukaKas', 'dp'],
+    ['fee', 'Fee', 'a2', 'bukaFee', ''], ['laporan', 'Laporan', 'a2', 'buka', 'laba'], ['closing', 'Closing', 'a3', 'buka', 'laba'], ['atur', 'Atur', 'a4', 'buka', 'atur']];
+  const baris = j => { const mj = pemasukanJadwal(j); return `<div class="br-row tk" role="button" tabindex="0" data-act="editJadwal" data-id="${j.id}"><span class="br-jam">${esc(j.jam || '--:--')}</span><span class="br-isi"><b>${esc(j.customer)}</b><small>${esc(j.jenis.replace(/^Paket /, ''))} · ${esc(j.paket)}</small></span>${mj ? (mj.bayar === 'dp' ? '<span class="pil dp">DP</span>' : '<span class="pil ok">Lunas</span>') : '<span class="pil">Belum bayar</span>'}</div>`; };
+  const kas = itemKas('semua', p).slice(0, 5);
+  return `<div class="beranda">
+  <label class="cari-hp"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariBeranda" type="search" placeholder="Cari customer, paket, pengeluaran" autocomplete="off"></label>
+  <div class="sapa"><b>${sapa} <span class="lambai">👋</span></b><small>${esc(tglPanjang(hariIni))}</small></div>
+  <section class="saldo">
+    <small>Bersih ${BULAN[D.mo - 1]}</small>
+    <b data-hitung="${D.bersih}">${rp(D.bersih)}</b>
+    <div class="saldo-sub"><span>Masuk ${rpS(D.tm)}</span><span>Keluar ${rpS(D.tk)}</span>${dpList.length ? `<span>DP titipan ${rpS(dpList.reduce((s, m) => s + (Number(m.dp) || 0), 0))}</span>` : ''}</div>
+    <div class="aksi-cepat">
+      <button class="tk" data-act="tambahJenis" data-v="jadwal">${ikon('booking')}<span>Booking</span></button>
+      <button class="tk" data-act="tambahJenis" data-v="masuk">${ikon('masuk')}<span>Masuk</span></button>
+      <button class="tk" data-act="tambahJenis" data-v="keluar">${ikon('keluar')}<span>Keluar</span></button>
+      <button class="tk" data-act="buka" data-v="laba">${ikon('closing')}<span>Closing</span></button>
+    </div>
+  </section>
+  <section class="menu-ikon">${menu.map(([k, n, w, act, v], i) => `<button class="tk" data-act="${act}" data-v="${v}" style="--i:${i}"><i class="${w}">${ikon(k)}</i><span>${n}</span></button>`).join('')}</section>
+  <div class="br-dua">
+    <section class="br-kartu"><div class="br-head"><h2>Hari ini</h2><button class="link" data-act="buka" data-v="jadwal">Lihat jadwal</button></div>
+      ${hariIniList.length ? hariIniList.map(baris).join('') : '<p class="br-kosong">Belum ada jadwal hari ini.</p>'}
+      ${besokList.length ? `<div class="br-sub">Besok · ${besokList.length} jadwal</div>${besokList.slice(0, 3).map(baris).join('')}` : ''}
+      ${feeBelum.length || dpList.length ? `<div class="br-sub">Perlu tindakan</div>
+        ${feeBelum.length ? `<div class="br-row tk" role="button" tabindex="0" data-act="bukaFee"><span class="br-dot merah"></span><span class="br-isi"><b>${feeBelum.length} fee belum dibayar</b><small>${rp(feeBelum.reduce((s, k) => s + totalKeluar(k), 0))}</small></span><span class="panah">›</span></div>` : ''}
+        ${dpList.length ? `<div class="br-row tk" role="button" tabindex="0" data-act="bukaKas" data-v="dp"><span class="br-dot kuning"></span><span class="br-isi"><b>${dpList.length} DP belum lunas</b><small>sisa tagihan ${rp(dpList.reduce((s, m) => s + sisaTagihan(m), 0))}</small></span><span class="panah">›</span></div>` : ''}` : ''}
+    </section>
+    <section class="br-kartu"><div class="br-head"><h2>Riwayat terakhir</h2><button class="link" data-act="buka" data-v="kas">Semua</button></div>
+      ${kas.length ? kas.map(barisKas).join('') : '<p class="br-kosong">Belum ada transaksi bulan ini.</p>'}
+    </section>
+  </div>
+</div>`;
+}
+
+// ---------- Riwayat: pemasukan, pengeluaran, DP dalam satu daftar ----------
+function itemKas(f, p) {
+  const ok = r => p === 'semua' || (r.bulan === BULAN_UP[Number(p.slice(5)) - 1] && r.tanggal.slice(0, 4) === p.slice(0, 4));
+  const q = cari.trim().toLowerCase(), cocok = t => !q || t.toLowerCase().includes(q);
+  const out = [];
+  if (f === 'semua' || f === 'masuk') S.masuk.filter(m => sudahLunas(m) && ok(m) && cocok(m.customer + ' ' + namaPaket(m))).forEach(m => out.push({ t: m.tanggal + (m.waktu || ''), tgl: m.tanggal, jenis: 'masuk', judul: m.customer, sub: namaPaket(m), nilai: jumlahMasuk(m), act: 'editMasuk', id: m.id }));
+  if (f === 'semua' || f === 'keluar') S.keluar.filter(k => ok(k) && cocok(k.nama)).forEach(k => out.push({ t: k.tanggal + '99', tgl: k.tanggal, jenis: 'keluar', judul: k.nama, sub: ({ fee: 'Fee fotografer', edit: 'Fee edit', cetak: 'Cetak', lain: namaPos(posOps(k)) })[k.jenis || 'lain'] + (k.status === 'BELUM' ? ' · belum dibayar' : ''), nilai: -totalKeluar(k), act: 'editKeluar', id: k.id }));
+  if (f === 'semua' || f === 'dp') { const D = dataDp(p); [...D.ini, ...(f === 'dp' ? D.lama : [])].filter(m => cocok(m.customer + ' ' + namaPaket(m))).forEach(m => out.push({ t: (m.tglDp || m.tanggal) + (m.waktu || ''), tgl: m.tglDp || m.tanggal, jenis: 'dp', judul: m.customer, sub: `DP ${namaPaket(m)} · sisa ${rp(sisaTagihan(m))}`, nilai: Number(m.dp) || 0, act: 'editMasuk', id: m.id })); }
+  return out.sort((a, b) => b.t.localeCompare(a.t));
+}
+const barisKas = x => `<div class="kas-row tk" role="button" tabindex="0" data-act="${x.act}" data-id="${x.id}">
+  <i class="kas-ik ${x.jenis}">${ikon(x.jenis === 'dp' ? 'dp' : x.jenis)}</i>
+  <span class="kas-isi"><b>${esc(x.judul || '—')}</b><small>${esc(x.sub)}</small></span>
+  <span class="kas-nilai ${x.jenis}">${x.jenis === 'keluar' ? '−' : x.jenis === 'dp' ? '' : '+'}${rp(Math.abs(x.nilai))}${x.jenis === 'dp' ? '<small>titipan</small>' : ''}</span></div>`;
+
+function viewKas() {
+  const items = itemKas(filterKas, periode), per = {};
+  items.forEach(x => (per[x.tgl] ||= []).push(x));
+  const tm = items.filter(x => x.jenis === 'masuk').reduce((s, x) => s + x.nilai, 0), tk = -items.filter(x => x.jenis === 'keluar').reduce((s, x) => s + x.nilai, 0);
+  return `<div class="judul"><div><h1>Riwayat</h1><div class="sub">Pemasukan, pengeluaran, dan DP dalam satu daftar</div></div></div>
+  <div class="card bar-atas">${pilihPeriode(true)}
+    <div class="seg" style="margin-left:auto">${[['semua', 'Semua'], ['masuk', 'Masuk'], ['keluar', 'Keluar'], ['dp', 'DP']].map(([v, l]) => `<button class="${filterKas === v ? 'on' : ''}" data-act="filterKas" data-v="${v}">${l}</button>`).join('')}</div></div>
+  <label class="cari-hp cari-kas"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariKas" type="search" value="${esc(cari)}" placeholder="Cari customer, paket, pengeluaran" autocomplete="off"></label>
+  <div class="kas-ringkas"><div><small>Masuk</small><b class="masuk">${rp(tm)}</b></div><div><small>Keluar</small><b class="keluar">${rp(tk)}</b></div><div><small>Bersih</small><b>${rp(tm - tk)}</b></div></div>
+  ${cari ? `<div class="catatan" style="margin:0 0 12px">Hasil pencarian "<b>${esc(cari)}</b>" · <a href="#" data-act="hapusCari">hapus pencarian</a></div>` : ''}
+  <div class="card kas-list">${Object.keys(per).length ? Object.entries(per).map(([t, xs]) => `<div class="kas-tgl">${esc(tglPanjang(t))}</div>${xs.map(barisKas).join('')}`).join('') : '<div class="kosong">Tidak ada catatan di periode ini.</div>'}</div>`;
+}
+
+function menuTambah() {
+  formJenis = null;
+  const opsi = [['jadwal', 'booking', 'Booking / jadwal', 'Customer, paket, add-on, tanggal foto'], ['masuk', 'masuk', 'Pemasukan', 'Pembayaran lunas dari customer'], ['dp', 'dp', 'DP', 'Uang muka — belum dihitung pemasukan'], ['keluar', 'keluar', 'Pengeluaran', 'Fee, cetak, operasional']];
+  bukaModal(`<div class="sheet-head"><h2>Tambah</h2><button class="x" data-act="tutup" aria-label="Tutup">×</button></div>
+  <div class="sheet-body"><div class="pilih-tambah">${opsi.map(([v, ik, n, d]) => `<button class="tk" data-act="tambahJenis" data-v="${v}"><i class="kas-ik ${v === 'jadwal' ? 'masuk' : v}">${ikon(ik)}</i><span><b>${n}</b><small>${d}</small></span></button>`).join('')}</div></div>`, 'kecil');
 }
 
 function blokDp(p, untukLaporan) {
@@ -553,6 +654,7 @@ function viewAtur() {
       <div class="grid3" style="margin-top:12px">
         <label class="f"><span>DP otomatis (% dari total)</span><input type="number" data-s="dpPersen" value="${st.dpPersen ?? 30}"></label>
       </div>
+      <div class="f" style="margin-top:12px"><span>Font aplikasi</span><div class="seg">${FONT_UI.map(f => `<button type="button" class="${(st.font || 'Nunito') === f ? 'on' : ''}" style="font-family:'${f}'" data-act="gantiFont" data-v="${f}">${f}</button>`).join('')}</div></div>
     </div>
     <div class="card lebar"><div class="blok-head"><h2 style="flex:1;margin:0">Add-on booking</h2><button class="btn btn-utama btn-kecil" data-act="tambahAddon">+ Add-on</button></div>
       <div class="scroll-x"><table class="tabel tabel-in"><thead><tr><th>Nama add-on</th><th>Satuan</th><th>Harga per satuan</th><th></th></tr></thead><tbody>
@@ -932,7 +1034,15 @@ function exportCsv(j) {
 
 // ---------- event ----------
 const AKSI = {
-  tab: el => { tab = el.dataset.tab; ui('tab', tab); render(); window.scrollTo(0, 0); },
+  tab: el => { tab = el.dataset.tab; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
+  buka: el => { tab = el.dataset.v; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
+  bukaKas: el => { filterKas = el.dataset.v || 'semua'; if (filterKas === 'dp') periode = hariIni.slice(0, 7); tab = 'kas'; animasi = true; render(); window.scrollTo(0, 0); },
+  bukaFee: () => { filterKeluar = 'BELUM'; periode = 'semua'; tab = 'keluar'; animasi = true; render(); window.scrollTo(0, 0); },
+  filterKas: el => { filterKas = el.dataset.v; render(); },
+  hapusCari: () => { cari = ''; render(); },
+  menuTambah,
+  gantiFont: el => { S.setelan.font = el.dataset.v; simpan(); render(); toast('Font: ' + el.dataset.v); },
+  tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), keluar: keluarBaru })[v](); },
   tambah: () => ({ jadwal: jadwalBaru, masuk: () => masukBaru(), keluar: keluarBaru }[tab] || (() => {}))(),
   pilihHari: el => { hariPilih = el.dataset.tgl; render(); },
   bulanKal: el => { bulanKal = new Date(bulanKal.getFullYear(), bulanKal.getMonth() + Number(el.dataset.d), 1); render(); },
@@ -1024,6 +1134,15 @@ function nilaiField(el) {
 
 document.addEventListener('input', e => {
   const el = e.target;
+  // pencarian: dari kotak mana pun pindah ke Riwayat (semua bulan), fokus tetap di kotak cari
+  if (el.id === 'cariTop' || el.id === 'cariBeranda' || el.id === 'cariKas') {
+    cari = el.value;
+    if (tab !== 'kas') { tab = 'kas'; filterKas = 'semua'; periode = 'semua'; }
+    render();
+    const target = el.id === 'cariTop' ? $('#cariTop') : $('#cariKas');
+    if (target) { target.focus(); target.setSelectionRange(cari.length, cari.length); }
+    return;
+  }
   // pengaturan: disimpan langsung
   if (el.dataset.s) { const k = el.dataset.s; S.setelan[k] = el.classList.contains('uang') ? nilaiField(el) : el.type === 'number' ? Number(el.value) || 0 : el.value; simpan(); if (k === 'nama') $('#namaStudio').textContent = el.value || 'Studio Foto'; return; }
   if (el.dataset.p && el.tagName !== 'SELECT') { const p = S.paket.find(x => x.id === el.dataset.p), k = el.dataset.k; p[k] = k === 'harga' || (k === 'fee' && p.feeTipe === 'nominal') ? nilaiField(el) : k === 'fee' ? Number(el.value) || 0 : el.value; simpan(); return; }
