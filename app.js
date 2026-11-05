@@ -1262,4 +1262,12 @@ function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add
 let ukuranLama = innerWidth;
 addEventListener('resize', () => { if (tab === 'laba' && Math.abs(innerWidth - ukuranLama) > 30) { ukuranLama = innerWidth; gambarGrafik(); } });
 render();
-if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+// versi baru di GitHub langsung terpasang: cek update tiap aplikasi dibuka lagi, muat ulang sekali (kecuali form sedang terbuka)
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  const adaLama = !!navigator.serviceWorker.controller; let sudahMuat = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (adaLama && !sudahMuat && $('#modal').hidden) { sudahMuat = true; location.reload(); } });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => {
+    r.update();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update(); });
+  }).catch(() => {});
+}

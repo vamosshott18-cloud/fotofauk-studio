@@ -2,8 +2,9 @@
 // Semua HP/PC yang tersambung membaca & menulis ke sheet "data" ini.
 // Satu baris = satu catatan: koleksi (jadwal/masuk/keluar/setelan), id, diubah (waktu server, ms), hapus, json.
 //
-// Pasang: 1) jalankan siapkan() sekali (buat Sheet)  2) Terapkan → Deployment baru → Aplikasi web,
-//         Jalankan sebagai: Saya, Akses: Siapa saja  3) salin URL /exec ke "link sambung" aplikasi.
+// Pasang: 1) jalankan siapkan() sekali (buat Sheet)  2) PIN studio dibuat dari aplikasi oleh perangkat pertama
+//         (selama belum ada PIN; atau jalankan buatPinAwal() → PIN acak di log)  3) Terapkan → Deployment baru → Aplikasi web, Jalankan sebagai: Saya, Akses: Siapa saja
+//         4) URL /exec ditaruh di sinkron.js (DB_BAWAAN). Tanpa PIN yang benar server tidak memberi/menerima data.
 
 const NAMA_SHEET = 'data';
 
@@ -19,6 +20,27 @@ function siapkan() {
   Logger.log('Sheet dibuat: ' + ss.getUrl());
 }
 
+// PIN studio 6 angka (disimpan di Script Properties, tidak ada di kode/GitHub)
+function buatPinAwal() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('PIN')) { Logger.log('PIN sudah ada. Ganti lewat aplikasi → Atur.'); return; }
+  const pin = String(Math.floor(100000 + Math.random() * 900000));
+  props.setProperty('PIN', pin);
+  Logger.log('PIN studio: ' + pin);
+}
+
+// salah 10× dalam 15 menit → semua cek PIN dikunci 15 menit
+function pinBenar_(pin) {
+  const cache = CacheService.getScriptCache(), salah = Number(cache.get('salah') || 0);
+  if (salah >= 10) return 'terkunci';
+  const asli = PropertiesService.getScriptProperties().getProperty('PIN');
+  if (!asli) return 'belum';
+  if (asli && String(pin || '') === asli) return 'ok';
+  cache.put('salah', String(salah + 1), 900);
+  Utilities.sleep(1500);
+  return 'pin';
+}
+
 function sheet_() {
   return SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID')).getSheetByName(NAMA_SHEET);
 }
@@ -29,12 +51,30 @@ function doGet() {
 
 // {aksi:'kirim', rows:[{koleksi,id,hapus,data}], sejak} → simpan, lalu kembalikan semua baris yang berubah sejak "sejak"
 // {aksi:'tarik', sejak} → hanya kembalikan perubahan
+// {aksi:'gantiPin', pinBaru} → ganti PIN studio (semua perangkat lain diminta PIN baru)
+// {aksi:'buatPin', pinBaru} → hanya bisa selama belum ada PIN (perangkat pertama)
+// Semua permintaan lain wajib membawa pin.
 function doPost(e) {
   let req;
   try { req = JSON.parse(e.postData.contents || '{}'); } catch (err) { return json_({ ok: false, error: 'json' }); }
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try {
+    if (req.aksi === 'buatPin') {
+      const props = PropertiesService.getScriptProperties();
+      if (props.getProperty('PIN')) return json_({ ok: false, error: 'pin' });
+      if (!/^\d{6,8}$/.test(String(req.pinBaru || ''))) return json_({ ok: false, error: 'pin_baru' });
+      props.setProperty('PIN', String(req.pinBaru));
+      return json_({ ok: true });
+    }
+    const cek = pinBenar_(req.pin);
+    if (cek !== 'ok') return json_({ ok: false, error: cek });
+    if (req.aksi === 'gantiPin') {
+      const baru = String(req.pinBaru || '');
+      if (!/^\d{6,8}$/.test(baru)) return json_({ ok: false, error: 'pin_baru' });
+      PropertiesService.getScriptProperties().setProperty('PIN', baru);
+      return json_({ ok: true });
+    }
     const sh = sheet_(), sekarang = Date.now();
     if (req.aksi === 'kirim' && Array.isArray(req.rows) && req.rows.length) {
       const nilai = sh.getDataRange().getValues(), letak = {};

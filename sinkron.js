@@ -1,13 +1,15 @@
 'use strict';
-// Sinkron ke Google Sheet (Apps Script di akun studio faublade01). Tanpa PIN: alamat database disimpan per perangkat
-// lewat "link sambung" (?db=…) dan TIDAK ada di kode/GitHub. Tanpa alamat, aplikasi tetap jalan lokal seperti biasa.
+// Sinkron ke Google Sheet (Apps Script di akun studio faublade01). Semua perangkat otomatis memakai database ini;
+// tiap HP/PC cukup isi PIN studio sekali (disimpan di perangkat). Tanpa PIN yang benar server tidak memberi data.
 //
 // Cara kerja: setiap simpan() → bandingkan tiap catatan dengan versi terakhir yang sudah terkirim → kirim yang berubah
 // (dan tanda hapus) → ambil perubahan perangkat lain sejak waktu server terakhir. Offline: antre, dikirim saat online.
 
-const DB_KEY = 'sf_db', SEJAK_KEY = 'sf_sejak', TERKIRIM_KEY = 'sf_terkirim';
+const DB_BAWAAN = 'https://script.google.com/macros/s/AKfycbzaW9N6WNjd1kQBjXKNl8aQsXxFLTLYLjLYV3xv_qan-blr2FVjLt-VbrZ9Vvbb4HHDmw/exec';
+const DB_KEY = 'sf_db', PIN_KEY = 'sf_pin', SEJAK_KEY = 'sf_sejak', TERKIRIM_KEY = 'sf_terkirim';
 const KOLEKSI = ['jadwal', 'masuk', 'keluar'];
-let dbUrl = bacaLS(DB_KEY) || '';
+let dbUrl = bacaLS(DB_KEY) || DB_BAWAAN;
+let pin = bacaLS(PIN_KEY) || '';
 let sejak = Number(bacaLS(SEJAK_KEY)) || 0;
 let terkirim = (() => { try { return JSON.parse(bacaLS(TERKIRIM_KEY) || '{}'); } catch (e) { return {}; } })();
 let sedangSinkron = false, ulangSinkron = false, timerSinkron = null, statusSinkron = dbUrl ? 'menunggu' : 'lokal';
@@ -39,9 +41,9 @@ function terapkan(r) {
   else if (i >= 0) arr[i] = r.data; else arr.push(r.data);
 }
 
-async function panggilDb(body) {
+async function panggilDb(body, pinPakai = pin) {
   // text/plain supaya tidak ada preflight CORS ke Apps Script
-  const res = await fetch(dbUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+  const res = await fetch(dbUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ ...body, pin: pinPakai }) });
   const j = await res.json();
   if (!j.ok) throw new Error(j.error || 'gagal');
   return j;
@@ -49,6 +51,7 @@ async function panggilDb(body) {
 
 async function sinkron() {
   if (!dbUrl) return;
+  if (!pin) { layarPin(); return; }
   if (sedangSinkron) { ulangSinkron = true; return; }
   sedangSinkron = true; setStatus('menyimpan');
   try {
@@ -78,6 +81,7 @@ async function sinkron() {
     if (berubah) { simpanLokal(); segarkan(); }
     setStatus('tersinkron');
   } catch (e) {
+    if (e.message === 'pin') { pin = ''; tulisLS(PIN_KEY, null); layarPin('PIN studio sudah diganti. Masukkan PIN yang baru.'); }
     setStatus(navigator.onLine === false ? 'offline' : 'gagal');
   } finally {
     sedangSinkron = false;
@@ -89,7 +93,7 @@ function simpanLokal() { try { localStorage.setItem(KEY, JSON.stringify(S)); } c
 // gambar ulang hanya kalau tidak ada form terbuka (supaya isian tidak hilang)
 function segarkan() { if ($('#modal').hidden) render(); }
 function jadwalkanSinkron(ms = 900) { if (!dbUrl) return; clearTimeout(timerSinkron); timerSinkron = setTimeout(sinkron, ms); }
-window.setelahSimpan = () => { if (dbUrl) { setStatus('menunggu'); jadwalkanSinkron(); } };
+window.setelahSimpan = () => { if (dbUrl && pin) { setStatus('menunggu'); jadwalkanSinkron(); } };
 
 const TEKS_STATUS = { lokal: 'Hanya di perangkat ini', menunggu: 'Belum tersimpan ke Sheet', menyimpan: 'Menyimpan…', tersinkron: 'Tersimpan di Google Sheet', offline: 'Offline — tersimpan di perangkat, dikirim nanti', gagal: 'Gagal sambung — dicoba lagi' };
 function setStatus(s) {
@@ -99,40 +103,87 @@ function setStatus(s) {
   const t = document.getElementById('teksStatusDb'); if (t) t.textContent = TEKS_STATUS[s];
 }
 
-// ---------- sambung perangkat ----------
-const urlDariKode = v => /^https?:\/\//.test(v) ? v : `https://script.google.com/macros/s/${v}/exec`;
-const kodeDariUrl = u => (u.match(/\/macros\/s\/([^/]+)\/exec/) || [])[1] || u;
-function linkSambung() { return location.origin + location.pathname + '?db=' + encodeURIComponent(kodeDariUrl(dbUrl)); }
-function sambungkan(v) {
-  dbUrl = urlDariKode(v.trim()); tulisLS(DB_KEY, dbUrl);
-  sejak = 0; terkirim = {}; simpanStatus();
-  setStatus('menunggu'); sinkron();
+// ---------- PIN & perangkat ----------
+let pinPertama = '';
+function layarPin(pesan = '') {
+  let el = document.getElementById('layarPin');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'layarPin'; el.className = 'layar-pin';
+    el.innerHTML = `<form class="kotak-pin" autocomplete="off">
+      <img src="icon.svg" alt="">
+      <h1>FotoFauk Studio</h1>
+      <p>Masukkan PIN studio. Cukup sekali di perangkat ini.</p>
+      <input id="isiPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="••••••" aria-label="PIN studio">
+      <b id="pesanPin" role="alert"></b>
+      <button class="btn btn-utama" type="submit">Masuk</button>
+    </form>`;
+    document.body.appendChild(el);
+    el.querySelector('form').addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const v = el.querySelector('#isiPin').value.trim(), tombol = el.querySelector('button');
+      if (!/^\d{6,8}$/.test(v)) { tulisPesanPin('PIN 6–8 angka'); return; }
+      tombol.disabled = true; tulisPesanPin('Memeriksa…');
+      try {
+        if (pinPertama) {
+          // database belum punya PIN: PIN yang diketik dua kali jadi PIN studio
+          if (v !== pinPertama) { pinPertama = ''; throw new Error('beda'); }
+          await panggilDb({ aksi: 'buatPin', pinBaru: v }, '');
+          pinPertama = '';
+        } else {
+          await panggilDb({ aksi: 'tarik', sejak: 9e15 }, v);   // cek PIN saja, tanpa ambil data
+        }
+        pin = v; tulisLS(PIN_KEY, v); el.hidden = true; tulisPesanPin('');
+        setStatus('menunggu'); await sinkron(); render();
+        toast('Tersambung ke database studio');
+      } catch (e) {
+        if (e.message === 'belum') { pinPertama = v; el.querySelector('#isiPin').value = ''; tulisPesanPin('Belum ada PIN studio. Ketik ulang PIN ini untuk menjadikannya PIN studio.'); return; }
+        if (e.message === 'beda') { el.querySelector('#isiPin').value = ''; tulisPesanPin('PIN tidak sama. Ulangi dari awal.'); return; }
+        tulisPesanPin(e.message === 'pin' ? 'PIN salah' : e.message === 'terkunci' ? 'Terlalu banyak salah. Coba lagi 15 menit lagi.' : 'Tidak bisa tersambung. Cek internet lalu coba lagi.');
+      } finally { tombol.disabled = false; }
+    });
+  }
+  el.hidden = false; tulisPesanPin(pesan);
+  setTimeout(() => el.querySelector('#isiPin').focus(), 50);
 }
-function putuskan() {
-  dbUrl = ''; tulisLS(DB_KEY, null); sejak = 0; terkirim = {}; tulisLS(SEJAK_KEY, null); tulisLS(TERKIRIM_KEY, null); setStatus('lokal');
+function tulisPesanPin(t) { const b = document.getElementById('pesanPin'); if (b) b.textContent = t; }
+
+function keluarPerangkat() {
+  pin = ''; tulisLS(PIN_KEY, null);
+  KOLEKSI.forEach(k => { S[k] = []; });
+  sejak = 0; terkirim = {}; tulisLS(SEJAK_KEY, null); tulisLS(TERKIRIM_KEY, null);
+  simpanLokal(); render(); layarPin();
 }
 
 function kartuDatabase() {
   return `<div class="card lebar"><h2>Database Google Sheet</h2>
-    <div class="baris"><span class="status-db ${statusSinkron}"></span><div class="isi"><b id="teksStatusDb">${TEKS_STATUS[statusSinkron]}</b><span>${dbUrl ? 'Semua perangkat yang tersambung memakai data yang sama (akun studio).' : 'Perangkat ini belum tersambung — data hanya ada di browser ini.'}</span></div>
-      ${dbUrl ? '<button class="btn btn-kecil" data-act="sinkronSekarang">Sinkron sekarang</button>' : ''}</div>
-    ${dbUrl ? `<div class="baris"><div class="isi"><b>Link sambung perangkat</b><span>Buka link ini sekali di HP/PC tim supaya tersambung. Bagikan ke tim saja — siapa pun yang punya link bisa melihat data.</span></div><button class="btn btn-kecil" data-act="salinLinkDb">Salin link</button></div>
-      <div class="baris"><div class="isi"><b>Putuskan perangkat ini</b><span>Data di Sheet tetap aman; perangkat ini kembali lokal.</span></div><button class="btn btn-kecil btn-hapus" data-act="putuskanDb">Putuskan</button></div>`
-    : `<div class="baris"><div class="isi"><b>Sambungkan</b><span>Tempel link sambung atau kode database dari admin.</span></div><button class="btn btn-kecil btn-utama" data-act="sambungDb">Sambungkan</button></div>`}
+    <div class="baris"><span class="status-db ${statusSinkron}"></span><div class="isi"><b id="teksStatusDb">${TEKS_STATUS[statusSinkron]}</b><span>Semua HP/PC studio otomatis memakai data yang sama. Perangkat baru cukup buka aplikasi lalu isi PIN studio sekali.</span></div>
+      <button class="btn btn-kecil" data-act="sinkronSekarang">Sinkron sekarang</button></div>
+    <div class="baris"><div class="isi"><b>Ganti PIN studio</b><span>Semua perangkat lain akan diminta PIN baru.</span></div><button class="btn btn-kecil" data-act="gantiPinDb">Ganti PIN</button></div>
+    <div class="baris"><div class="isi"><b>Keluar dari perangkat ini</b><span>Data di Google Sheet tetap aman; data di perangkat ini dihapus dan perlu PIN lagi.</span></div><button class="btn btn-kecil btn-hapus" data-act="keluarDb">Keluar</button></div>
   </div>`;
 }
 
 Object.assign(AKSI, {
   sinkronSekarang: () => sinkron(),
-  salinLinkDb: async () => { try { await navigator.clipboard.writeText(linkSambung()); toast('Link sambung disalin'); } catch (e) { prompt('Salin link ini:', linkSambung()); } },
-  putuskanDb: () => { if (confirm('Putuskan perangkat ini dari database? Data di Google Sheet tidak terhapus.')) { putuskan(); render(); toast('Perangkat diputus'); } },
-  sambungDb: () => { const v = prompt('Tempel link sambung atau kode database:'); if (!v) return; const m = v.match(/[?&]db=([^&\s]+)/); sambungkan(m ? decodeURIComponent(m[1]) : v); render(); toast('Menyambungkan…'); }
+  gantiPinDb: async () => {
+    const baru = prompt('PIN baru (6–8 angka):'); if (baru == null) return;
+    if (!/^\d{6,8}$/.test(baru.trim())) { toast('PIN harus 6–8 angka'); return; }
+    if (prompt('Ketik ulang PIN baru:') !== baru) { toast('PIN tidak sama'); return; }
+    try { await panggilDb({ aksi: 'gantiPin', pinBaru: baru.trim() }); pin = baru.trim(); tulisLS(PIN_KEY, pin); toast('PIN studio diganti'); }
+    catch (e) { toast('Gagal ganti PIN — cek internet'); }
+  },
+  keluarDb: async () => {
+    await sinkron();
+    if (perubahanLokal().length) { toast('Masih ada data yang belum terkirim — sambungkan internet dulu'); return; }
+    if (confirm('Keluar dari perangkat ini? Data tetap aman di Google Sheet.')) keluarPerangkat();
+  }
 });
 
-// link sambung: ?db=<kode> → simpan di perangkat, hapus dari alamat
+// link sambung lama (?db=…) tidak dipakai lagi: buang dari alamat
 (() => {
-  const p = new URLSearchParams(location.search), kode = p.get('db');
-  if (kode) { sambungkan(kode); p.delete('db'); history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p : '') + location.hash); }
+  const p = new URLSearchParams(location.search);
+  if (p.has('db')) { p.delete('db'); history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p : '') + location.hash); }
+  if (bacaLS(DB_KEY) === DB_BAWAAN) tulisLS(DB_KEY, null);
   setStatus(statusSinkron);
   if (dbUrl) {
     sinkron();
