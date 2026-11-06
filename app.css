@@ -717,3 +717,39 @@ h1{font-size:26px} h2{font-size:18px}
 .kotak-pin input:focus{outline:none;border-color:#0E9F9D;box-shadow:0 0 0 3px rgba(14,159,157,.18)}
 .kotak-pin b{min-height:18px;font-size:13px;color:#C9503B;font-weight:600}
 .kotak-pin .btn{width:100%;justify-content:center}
+
+/* kartu tosca: tulisan putih supaya kontras (tosca sedikit lebih gelap agar putih terbaca) */
+.saldo,.stat.utama,.cl-kpi .utama{background:linear-gradient(135deg,#12A9A7,#0B8C8A);border-color:#0B8C8A;color:#fff}
+.saldo *,.stat.utama *,.cl-kpi .utama *{color:#fff}
+.saldo-sub span{background:rgba(255,255,255,.2)}
+.saldo .aksi-cepat svg,.saldo .aksi-cepat svg *{color:var(--teal-s)}
+
+/* rincian laporan ringkas: ketuk kelompok → daftar, ketuk baris → keterangan */
+.rinci-dua{align-items:start}
+.rinci-grup{border:1px solid var(--line2);border-radius:14px;margin-top:8px;background:var(--white);overflow:hidden}
+.rinci-grup>summary,.rinci-item>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px}
+.rinci-grup>summary::-webkit-details-marker,.rinci-item>summary::-webkit-details-marker{display:none}
+.rinci-grup>summary{padding:12px 14px}
+.rinci-grup>summary .kotak{width:12px;height:12px;border-radius:4px;flex:none}
+.rinci-grup>summary .nm{flex:1;min-width:0;font-weight:700;display:flex;flex-direction:column}
+.rinci-grup>summary .nm small{font-weight:600;font-size:12px;color:var(--muted)}
+.rinci-grup>summary b{font-weight:800}
+.rinci-grup>summary::after,.rinci-item>summary::after{content:'›';color:var(--muted);font-size:18px;line-height:1;transition:transform .2s}
+.rinci-grup[open]>summary::after,.rinci-item[open]>summary::after{transform:rotate(90deg)}
+.rinci-grup[open]>summary{border-bottom:1px solid var(--line2);background:var(--pale)}
+.rinci-daftar{padding:4px 0}
+.rinci-sub{display:flex;justify-content:space-between;gap:10px;padding:10px 14px 4px;font-size:12px;font-weight:800;color:var(--ink2);text-transform:uppercase;letter-spacing:.03em}
+.rinci-item>summary{padding:8px 14px;font-size:14px}
+.rinci-item>summary:hover{background:var(--bg)}
+.rinci-item .tgl{width:74px;flex:none;font-size:12px;color:var(--muted);font-weight:600}
+.rinci-item .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.titik-belum{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);margin-right:6px;vertical-align:middle}
+.rinci-item b{font-weight:700}
+.rinci-item[open]>summary{background:var(--bg)}
+.rinci-isi{margin:0 14px 10px 98px;padding:10px 12px;background:var(--bg);border-radius:10px;display:grid;gap:6px;font-size:13px}
+.rinci-isi div{display:flex;justify-content:space-between;gap:12px}
+.rinci-isi span{color:var(--ink2)}
+.rinci-isi b{font-weight:700;text-align:right}
+.rinci-total{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--pale);font-weight:700}
+.rinci-total b,.rinci-grup>summary b,.rinci-item>summary b{font-weight:800;white-space:nowrap}
+@media (max-width:640px){ .rinci-isi{margin-left:14px} .rinci-item .tgl{width:64px} }

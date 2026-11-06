@@ -520,6 +520,15 @@ function barisKelompok(groups, nKol, ekor, nilai, satuan, baris) {
     return `<tr class="grup"><td colspan="${nKol}"><i class="kotak" style="background:${g.warna}"></i> ${esc(g.judul)} <span>· ${g.rows.length} ${satuan}</span></td></tr>${isi}<tr class="subtotal"><td colspan="${span}">Subtotal ${esc(g.judul)}</td><td class="r tnum">${rp(g.total)}</td>${kosong}</tr>`;
   }).join('');
 }
+// Rincian ringkas di tab Laporan: kelompok (ketuk → buka) berisi satu baris per catatan; ketuk baris → keterangan lengkap.
+function daftarRinci(groups, total, satuan, nilai, judulBaris, detail) {
+  if (!groups.length) return '<div class="kosong">Belum ada data.</div>';
+  const item = r => `<details class="rinci-item"><summary><span class="tgl">${esc(tglExcel(r.tanggal))}</span><span class="nm">${judulBaris(r)}</span><b class="tnum">${rp(nilai(r))}</b></summary>
+    <div class="rinci-isi">${detail(r).filter(([, v]) => v !== '' && v != null).map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}</div></details>`;
+  return groups.map(g => `<details class="rinci-grup"><summary><i class="kotak" style="background:${g.warna}"></i><span class="nm">${esc(g.judul)}<small>${g.rows.length} ${satuan} · ${total ? Math.round(g.total / total * 100) : 0}%</small></span><b class="tnum">${rp(g.total)}</b></summary>
+    <div class="rinci-daftar">${g.sub.map(([nama, rows]) => (nama ? `<div class="rinci-sub"><span>${esc(nama)} · ${rows.length}</span><span class="tnum">${rp(rows.reduce((s, r) => s + nilai(r), 0))}</span></div>` : '') + rows.map(item).join('')).join('')}</div>
+  </details>`).join('');
+}
 const KAT = { fee: ['Fee fotografer', WARNA.fee], edit: ['Fee edit', WARNA.edit], cetak: ['Cetak', WARNA.cetak], lain: ['Operasional', WARNA.ops] };
 
 function selisih(kini, lalu, lbl, terbalik) {
@@ -558,10 +567,11 @@ function viewLaporan() {
     ${(() => { const dp = dataDp(periode), n = dp.ini.length + dp.lama.length, t = [...dp.ini, ...dp.lama].reduce((s, m) => s + (Number(m.dp) || 0), 0); return n ? `Uang DP titipan <b>${rp(t)}</b> dari ${n} booking belum dihitung (lihat Catatan DP). ` : ''; })()}Penyumbang terbesar: <b>${esc(topPaket[0]?.[0] || '-')}</b> (${pct(topPaket[0]?.[1].v || 0, D.tm)} pemasukan). Hari paling ramai: <b>${HR_PANJANG[iHr]}</b>; tanggal terbesar: <b>${iTop + 1} ${BULAN[D.mo - 1]}</b> (${rp(hM[iTop])}).`;
 
   // rincian dikelompokkan per jenis
-  const barisMasuk = barisKelompok(kelompokMasuk(D.masuk), 9, 0, jumlahMasuk, 'transaksi', (m, no) =>
-    `<tr><td class="tnum">${no}</td><td>${esc(tglExcel(m.tanggal))}</td><td class="tnum">${esc(m.waktu)}</td><td>${esc(m.customer)}</td><td class="wrap">${esc(namaPaket(m))}</td><td class="r tnum">${rp(m.nilai)}</td><td class="wrap">${esc(m.tambahan === 'ADA' ? m.ket : '')}</td><td class="r tnum">${nominalOf(m) ? rp(nominalOf(m)) : ''}</td><td class="r tnum"><b>${rp(jumlahMasuk(m))}</b></td></tr>`);
-  const barisKeluar = barisKelompok(kelompokKeluar(D.keluar), 7, 1, totalKeluar, 'catatan', (k, no) =>
-    `<tr><td class="tnum">${no}</td><td>${esc(tglExcel(k.tanggal))}</td><td class="wrap">${esc(k.nama)}</td><td class="r tnum">${rp(k.nominal)}</td><td class="r tnum">${k.jumlah}</td><td class="r tnum"><b>${rp(totalKeluar(k))}</b></td><td>${k.status}</td></tr>`);
+  const rinciMasukList = daftarRinci(kelompokMasuk(D.masuk), D.tm, 'transaksi', jumlahMasuk, m => esc(m.customer || '-'), m => [
+    ['Tanggal', esc(tglExcel(m.tanggal) + (m.waktu ? ' · ' + m.waktu : ''))], ['Paket', esc(namaPaket(m))], ['Nilai penjualan', rp(m.nilai) + (Number(m.qty) > 1 ? ' × ' + m.qty : '')],
+    ['Keterangan', m.tambahan === 'ADA' ? esc(m.ket || '') : ''], ['Nominal tambahan', nominalOf(m) ? rp(nominalOf(m)) : ''], ['Fotografer', esc(m.fotografer || '')], ['Total', rp(jumlahMasuk(m))]]);
+  const rinciKeluarList = daftarRinci(kelompokKeluar(D.keluar), D.tk, 'catatan', totalKeluar, k => (k.status === 'BELUM' ? '<i class="titik-belum" title="Belum dibayar"></i>' : '') + esc(k.nama || '-'), k => [
+    ['Tanggal', esc(tglExcel(k.tanggal))], ['Harga satuan', rp(k.nominal)], ['Jumlah', k.jumlah], ['Total', rp(totalKeluar(k))], ['Status', k.status === 'BELUM' ? 'Belum dibayar' : 'Sudah dibayar']]);
   const bagi = [['Investor', D.investor, st.investor, WARNA.pas], ['Kas', D.kas, st.kas, WARNA.cetak], ['Studio', D.studio, st.studio, WARNA.paket]];
 
   return `<div class="judul"><div><h1>Laporan Bulanan</h1><div class="sub">${esc(st.nama)} · Periode 01/${String(D.mo).padStart(2, '0')}/${D.y} – ${nHari}/${String(D.mo).padStart(2, '0')}/${D.y}</div></div>
@@ -613,12 +623,12 @@ function viewLaporan() {
 
   <div class="judul" style="margin-top:26px"><div><h1 style="font-size:24px">Rincian seperti laporan Excel</h1><div class="sub">Laporan harian pemasukan, pengeluaran, total, team, ruko, laba bersih</div></div></div>
   ${blokDp(periode, true)}
-  <details class="card" open><summary><h2>Rincian pemasukan per jenis</h2><span class="tnum">${D.masuk.length} transaksi · ${rp(D.tm)}</span></summary>
-    <div class="scroll-x"><table class="tabel tabel-lap"><thead><tr><th>No</th><th>Tanggal</th><th>Waktu</th><th>Nama</th><th>Paket</th><th class="r">Nilai Penjualan</th><th>Keterangan</th><th class="r">Nominal</th><th class="r">Total</th></tr></thead>
-    <tbody>${barisMasuk}</tbody><tfoot><tr><td colspan="8">TOTAL PEMASUKAN</td><td class="r tnum">${rp(D.tm)}</td></tr></tfoot></table></div></details>
-  <details class="card" open><summary><h2>Rincian pengeluaran per kategori</h2><span class="tnum">${D.keluar.length} catatan · ${rp(D.tk)}</span></summary>
-    <div class="scroll-x"><table class="tabel tabel-lap"><thead><tr><th>No</th><th>Tanggal/Hari</th><th>Pengeluaran</th><th class="r">Harga satuan</th><th class="r">Jumlah</th><th class="r">Harga</th><th>Status</th></tr></thead>
-    <tbody>${barisKeluar}</tbody><tfoot><tr><td colspan="5">TOTAL PENGELUARAN</td><td class="r tnum">${rp(D.tk)}</td><td></td></tr></tfoot></table></div></details>
+  <div class="dua rinci-dua">
+    <div class="card"><div class="grafik-head"><h2>Rincian pemasukan</h2><span class="sub">ketuk untuk lihat isinya</span></div>
+      ${rinciMasukList}<div class="rinci-total"><span>Total pemasukan · ${D.masuk.length} transaksi</span><b class="tnum">${rp(D.tm)}</b></div></div>
+    <div class="card"><div class="grafik-head"><h2>Rincian pengeluaran</h2><span class="sub">ketuk untuk lihat isinya · <i class="titik-belum"></i>belum dibayar</span></div>
+      ${rinciKeluarList}<div class="rinci-total"><span>Total pengeluaran · ${D.keluar.length} catatan</span><b class="tnum">${rp(D.tk)}</b></div></div>
+  </div>
 
   <div class="dua">
     <div class="card"><h2>Total</h2><div class="ringkas" style="margin-top:0">
@@ -1259,6 +1269,9 @@ $('#fileRestore').addEventListener('change', async e => {
 let toastT;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2400); }
 
+// rincian yang tertutup tetap ikut tercetak
+addEventListener('beforeprint', () => document.querySelectorAll('details.rinci-grup:not([open]),details.rinci-item:not([open])').forEach(d => { d.open = true; d.dataset.cetak = '1'; }));
+addEventListener('afterprint', () => document.querySelectorAll('details[data-cetak]').forEach(d => { d.open = false; delete d.dataset.cetak; }));
 let ukuranLama = innerWidth;
 addEventListener('resize', () => { if (tab === 'laba' && Math.abs(innerWidth - ukuranLama) > 30) { ukuranLama = innerWidth; gambarGrafik(); } });
 render();
