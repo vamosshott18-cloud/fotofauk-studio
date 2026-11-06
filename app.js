@@ -299,7 +299,7 @@ function viewBeranda() {
     <b data-hitung="${D.bersih}">${rp(D.bersih)}</b>
     <div class="saldo-sub"><span>Masuk ${rpS(D.tm)}</span><span>Keluar ${rpS(D.tk)}</span>${dpList.length ? `<span>DP titipan ${rpS(dpList.reduce((s, m) => s + (Number(m.dp) || 0), 0))}</span>` : ''}</div>
     <div class="aksi-cepat">
-      <button class="tk" data-act="tambahJenis" data-v="jadwal">${ikon('booking')}<span>Booking</span></button>
+      <button class="tk" data-act="tambahJenis" data-v="jadwal">${ikon('booking')}<span>Jadwal</span></button>
       <button class="tk" data-act="tambahJenis" data-v="masuk">${ikon('masuk')}<span>Masuk</span></button>
       <button class="tk" data-act="tambahJenis" data-v="keluar">${ikon('keluar')}<span>Keluar</span></button>
       <button class="tk" data-act="buka" data-v="laba">${ikon('closing')}<span>Closing</span></button>
@@ -352,8 +352,9 @@ function viewKas() {
 function menuTambah() {
   formJenis = null;
   const nDp = S.masuk.filter(m => m.bayar === 'dp').length;
-  const opsi = [['jadwal', 'booking', 'Booking / jadwal', 'Customer, paket, add-on, tanggal foto'], ['masuk', 'masuk', 'Pemasukan', 'Pembayaran lunas dari customer'], ['dp', 'dp', 'DP', 'Uang muka — belum dihitung pemasukan'],
-    ['lunas', 'lunas', 'Pelunasan', nDp ? `${nDp} customer masih DP — pilih untuk dilunasi` : 'Belum ada DP yang perlu dilunasi'], ['keluar', 'keluar', 'Pengeluaran', 'Fee, cetak, operasional']];
+  const opsi = [['dp', 'dp', 'Booking', 'Customer bayar DP — belum dihitung pemasukan'],
+    ['lunas', 'lunas', 'Pelunasan', nDp ? `${nDp} customer masih DP — pilih untuk dilunasi` : 'Belum ada DP yang perlu dilunasi'],
+    ['jadwal', 'booking', 'Jadwal', 'Customer, paket, add-on, tanggal foto']];
   bukaModal(`<div class="sheet-head"><h2>Tambah</h2><button class="x" data-act="tutup" aria-label="Tutup">×</button></div>
   <div class="sheet-body"><div class="pilih-tambah">${opsi.map(([v, ik, n, d]) => `<button class="tk" data-act="tambahJenis" data-v="${v}"><i class="kas-ik ${v === 'jadwal' || v === 'lunas' ? 'masuk' : v}">${ikon(ik)}</i><span><b>${n}</b><small>${d}</small></span>${v === 'lunas' && nDp ? `<em class="hitung-dp">${nDp}</em>` : ''}</button>`).join('')}</div></div>`, 'kecil');
 }
@@ -391,17 +392,22 @@ function blokDp(p, untukLaporan) {
   </div>`;
 }
 
+const sisaLunas = m => sisaTagihan(m) + addonTotal(F);
+const ringkasLunas = m => `<div class="row"><span>Total booking</span><span class="tnum">${rp(jumlahMasuk(m))}</span></div>
+      ${addonTotal(F) ? `<div class="row"><span>Add-on: ${esc(addonTeks(F))}</span><span class="tnum">+ ${rp(addonTotal(F))}</span></div>` : ''}
+      <div class="row"><span>DP sudah dibayar · ${esc(tglPendek(m.tglDp || m.tanggal))}</span><span class="tnum">− ${rp(m.dp)}</span></div>
+      <div class="row total"><span>Sisa tagihan</span><b class="tnum">${rp(sisaLunas(m))}</b></div>`;
 function formLunas() {
   const m = S.masuk.find(x => x.id === F.id);
+  if (!F.bayarManual) F.bayarLunas = sisaLunas(m);
   return `${kepala('Pelunasan')}
   <div class="sheet-body">
-    ${bagian(1, esc(m.customer), esc(namaPaket(m)), `<div class="ringkas" style="margin:0">
-      <div class="row"><span>Total booking</span><span class="tnum">${rp(jumlahMasuk(m))}</span></div>
-      <div class="row"><span>DP sudah dibayar · ${esc(tglPendek(m.tglDp || m.tanggal))}</span><span class="tnum">− ${rp(m.dp)}</span></div>
-      <div class="row total"><span>Sisa tagihan</span><b class="tnum">${rp(sisaTagihan(m))}</b></div></div>`)}
-    ${bagian(2, 'Pelunasan', 'Nominal yang dibayar sekarang', `
+    ${bagian(1, esc(m.customer), esc(namaPaket(m)), `<div class="ringkas" style="margin:0" id="lunasRingkas">${ringkasLunas(m)}</div>`)}
+    ${bagian(2, 'Add-on', 'Tambahan saat pelunasan (kalau ada) — jumlah bisa diketik', `<div class="addon-list">${barisAddon(F)}</div>
+      <button type="button" class="tambah-baris" data-act="tambahAddonManual">+ Add-on lain (isi manual)</button>`)}
+    ${bagian(3, 'Pelunasan', 'Nominal yang dibayar sekarang', `
       <div class="grid2">
-        ${fld('Nominal pelunasan', uang('bayarLunas', F.bayarLunas), { wajib: true, bantu: 'terisi sisa tagihan, ubah kalau beda' })}
+        ${fld('Nominal pelunasan', uang('bayarLunas', F.bayarLunas), { wajib: true, bantu: 'terisi sisa tagihan + add-on, ubah kalau beda' })}
         ${fld('Tanggal lunas', `<input type="date" data-f="tanggal" value="${esc(F.tanggal)}">`, { wajib: true })}
       </div>
       <div class="catatan" style="margin:0" id="lunasInfo">${infoLunas(m)}</div>`)}
@@ -409,13 +415,24 @@ function formLunas() {
   <div class="sheet-foot"><span class="spacer"></span><button class="btn" data-act="tutup">Batal</button><button class="btn btn-utama" data-act="simpanLunas">Simpan pelunasan</button></div>`;
 }
 function infoLunas(m) {
-  const total = (Number(m.dp) || 0) + (Number(F.bayarLunas) || 0), beda = total - jumlahMasuk(m), d = F.tanggal ? keTgl(F.tanggal) : null;
-  return `DP ${rp(m.dp)} + pelunasan ${rp(F.bayarLunas || 0)} = <b>${rp(total)}</b> masuk pemasukan <b>${d ? BULAN[d.getMonth()] + ' ' + d.getFullYear() : '—'}</b>. Data DP-nya dihapus dari daftar DP.${beda ? `<br><span style="color:${beda < 0 ? '#B23A2F' : '#0B6B6A'}">${beda < 0 ? 'Kurang' : 'Lebih'} ${rp(Math.abs(beda))} dari total booking — dicatat sebagai ${beda < 0 ? 'potongan' : 'tambahan'} pelunasan.</span>` : ''}`;
+  const total = (Number(m.dp) || 0) + (Number(F.bayarLunas) || 0), beda = total - jumlahMasuk(m) - addonTotal(F), d = F.tanggal ? keTgl(F.tanggal) : null;
+  return `DP ${rp(m.dp)} + pelunasan ${rp(F.bayarLunas || 0)} = <b>${rp(total)}</b> masuk pemasukan <b>${d ? BULAN[d.getMonth()] + ' ' + d.getFullYear() : '—'}</b>. Data DP-nya dihapus dari daftar DP.${beda ? `<br><span style="color:${beda < 0 ? '#B23A2F' : '#0B6B6A'}">${beda < 0 ? 'Kurang' : 'Lebih'} ${rp(Math.abs(beda))} dari total booking${addonTotal(F) ? " + add-on" : ""} — dicatat sebagai ${beda < 0 ? 'potongan' : 'tambahan'} pelunasan.</span>` : ''}`;
 }
 function simpanLunas() {
   if (!F.tanggal) return toast('Isi tanggal lunas');
   const m = S.masuk.find(x => x.id === F.id), bayar = Number(F.bayarLunas) || 0;
-  if (!(bayar > 0) && sisaTagihan(m) > 0) return toast('Isi nominal pelunasan');
+  if (!(bayar > 0) && sisaLunas(m) > 0) return toast('Isi nominal pelunasan');
+  const add = addonTotal(F);
+  if (add) {   // add-on saat pelunasan → masuk tambahan transaksi + ikut tercatat di jadwalnya
+    const qty0 = Number(m.qty) || 1;
+    m.nominal = (m.tambahan === 'ADA' ? Number(m.nominal) || 0 : 0) + add / qty0;
+    m.ket = [m.tambahan === 'ADA' ? m.ket : '', addonKet(F)].filter(Boolean).join(' + ');
+    if (m.tambahan !== 'ADA') { m.tipeTambah = 'tambah'; m.tanda = '+'; }
+    m.tambahan = 'ADA';
+    const j = S.jadwal.find(x => x.id === m.jadwalId);
+    if (j) { j.addon ||= {}; addonRinci(F).forEach(a => { j.addon[a.id] = (Number(j.addon[a.id]) || 0) + a.qty; }); j.addonManual = [...(j.addonManual || []), ...addonManual(F)]; }
+    if (!m.feeManual) m.feeRp = feeOtomatis(m);
+  }
   const beda = (Number(m.dp) || 0) + bayar - jumlahMasuk(m), qty = Number(m.qty) || 1;
   if (beda) {   // pelunasan beda dari sisa tagihan → selisih dicatat sebagai penyesuaian supaya total = DP + pelunasan
     m.nominal = (m.tambahan === 'ADA' ? Number(m.nominal) || 0 : 0) + beda / qty;
@@ -734,6 +751,12 @@ function bukaModal(html, kelas = '') {
   m.hidden = false; document.body.classList.add('kunci');
 }
 function tutupModal() { $('#modal').hidden = true; $('#modal').innerHTML = ''; document.body.classList.remove('kunci'); F = null; formJenis = null; }
+function segarkanLunas() {
+  const m = S.masuk.find(x => x.id === F.id);
+  if (!F.bayarManual) { F.bayarLunas = sisaLunas(m); const b = document.querySelector('[data-f=bayarLunas]'); if (b) b.value = titik(F.bayarLunas); }
+  const r = $('#lunasRingkas'); if (r) r.innerHTML = ringkasLunas(m);
+  const li = $('#lunasInfo'); if (li) li.innerHTML = infoLunas(m);
+}
 function gambarUlangForm() {
   const body = document.querySelector('.sheet-body'), top = body ? body.scrollTop : 0;
   document.querySelector('.sheet').innerHTML = { jadwal: formJadwal, masuk: formMasuk, keluar: formKeluar, lunas: formLunas }[formJenis]();
@@ -762,19 +785,25 @@ const kartuPaket = (jenis, nilai) => {
 };
 const saklar = (k, on, label) => `<button type="button" class="saklar ${on ? 'on' : ''}" data-act="setF" data-k="${k}" data-v="${on ? 'TIDAK' : 'ADA'}" aria-pressed="${on}"><i></i>${label}</button>`;
 
+// baris add-on (tetap + manual) — dipakai form jadwal dan form pelunasan
+function barisAddon(d) {
+  d.addon ||= {};
+  const tetap = S.addon.map(a => { const n = Number(d.addon[a.id]) || 0; return `<div class="addon ${n ? 'on' : ''}">
+      <div class="addon-nama"><b>${esc(a.nama)}</b><span class="tnum">${rp(a.harga)} / ${esc(a.satuan)}</span></div>
+      <div class="qty"><button type="button" data-act="addonQty" data-id="${a.id}" data-d="-1" aria-label="Kurangi ${esc(a.satuan)}">−</button><input class="qty-in tnum" type="number" min="0" inputmode="numeric" data-f="addonQty" data-id="${a.id}" value="${n}" aria-label="Jumlah ${esc(a.satuan)}"><button type="button" data-act="addonQty" data-id="${a.id}" data-d="1" aria-label="Tambah ${esc(a.satuan)}">+</button></div>
+      <div class="addon-sub tnum" id="sub-${a.id}">${n ? rp(n * a.harga) : '—'}</div></div>`; }).join('');
+  const manual = (d.addonManual || []).map((a, i) => `<div class="addon manual on">
+      <input data-f="amNama" data-i="${i}" value="${esc(a.nama)}" placeholder="Nama add-on (mis. MUA, cetak 12R)" aria-label="Nama add-on">
+      <input class="uang tnum" data-f="amHarga" data-i="${i}" inputmode="numeric" value="${titik(a.harga)}" placeholder="Harga" aria-label="Harga add-on">
+      <button type="button" class="x" data-act="hapusAddonManual" data-i="${i}" aria-label="Hapus add-on">×</button></div>`).join('');
+  return tetap + manual;
+}
 function formJadwal() {
   const d = F;
   d.addon ||= {};
   const bentrok = d.jam ? S.jadwal.filter(j => j.id !== d.id && j.tanggal === d.tanggal && j.jam === d.jam) : [];
   const iStatus = STATUS_JADWAL.indexOf(d.status);
-  const addonRows = S.addon.map(a => { const n = Number(d.addon[a.id]) || 0; return `<div class="addon ${n ? 'on' : ''}">
-      <div class="addon-nama"><b>${esc(a.nama)}</b><span class="tnum">${rp(a.harga)} / ${esc(a.satuan)}</span></div>
-      <div class="qty"><button type="button" data-act="addonQty" data-id="${a.id}" data-d="-1" aria-label="Kurangi ${esc(a.satuan)}">−</button><input class="qty-in tnum" type="number" min="0" inputmode="numeric" data-f="addonQty" data-id="${a.id}" value="${n}" aria-label="Jumlah ${esc(a.satuan)}"><button type="button" data-act="addonQty" data-id="${a.id}" data-d="1" aria-label="Tambah ${esc(a.satuan)}">+</button></div>
-      <div class="addon-sub tnum" id="sub-${a.id}">${n ? rp(n * a.harga) : '—'}</div></div>`; }).join('');
-  const manualRows = (d.addonManual || []).map((a, i) => `<div class="addon manual on">
-      <input data-f="amNama" data-i="${i}" value="${esc(a.nama)}" placeholder="Nama add-on (mis. MUA, cetak 12R)" aria-label="Nama add-on">
-      <input class="uang tnum" data-f="amHarga" data-i="${i}" inputmode="numeric" value="${titik(a.harga)}" placeholder="Harga" aria-label="Harga add-on">
-      <button type="button" class="x" data-act="hapusAddonManual" data-i="${i}" aria-label="Hapus add-on">×</button></div>`).join('');
+  const addonRows = barisAddon(d), manualRows = '';
   return `${kepala(d.id ? 'Ubah jadwal' : 'Jadwal baru')}
   <div class="sheet-body form-dua">
     <div class="form-kiri">
@@ -1116,7 +1145,7 @@ const AKSI = {
     gambarUlangForm();
   },
   dpAuto: () => { F.dpManual = false; hitungFee(); gambarUlangForm(); },
-  bukaLunas: el => { const m = S.masuk.find(x => x.id === el.dataset.id); F = { id: m.id, tanggal: hariIni, bayarLunas: sisaTagihan(m) }; formJenis = 'lunas'; bukaModal(formLunas()); },
+  bukaLunas: el => { const m = S.masuk.find(x => x.id === el.dataset.id); F = { id: m.id, tanggal: hariIni, bayarLunas: sisaTagihan(m), addon: {}, addonManual: [], bayarManual: false }; formJenis = 'lunas'; bukaModal(formLunas()); },
   simpanLunas,
   feeAuto: () => { F.feeManual = false; hitungFee(); gambarUlangForm(); },
   // jadwal
@@ -1201,10 +1230,11 @@ document.addEventListener('input', e => {
   if (el.dataset.c) { S.cetakHarga[el.dataset.c][Number(el.dataset.i)] = nilaiField(el) || null; simpan(); return; }
   const k = el.dataset.f;
   if (!k || !F || el.tagName === 'SELECT') return;
-  if (formJenis === 'jadwal' && ['addonQty', 'amNama', 'amHarga'].includes(k)) {
+  if ((formJenis === 'jadwal' || formJenis === 'lunas') && ['addonQty', 'amNama', 'amHarga'].includes(k)) {
     if (k === 'addonQty') { const id = el.dataset.id, n = Math.max(0, Number(el.value) || 0), a = S.addon.find(x => x.id === id); F.addon[id] = n; $('#sub-' + id).textContent = n ? rp(n * a.harga) : '—'; el.closest('.addon').classList.toggle('on', n > 0); }
     else { const a = F.addonManual[el.dataset.i]; if (k === 'amNama') a.nama = el.value; else a.harga = nilaiField(el); }
-    segarkanJadwal(); return;
+    if (formJenis === 'jadwal') segarkanJadwal(); else segarkanLunas();
+    return;
   }
   const v = nilaiField(el);
   if (k === 'nominalAbs') F.nominal = (F.tanda === '-' ? -1 : 1) * v;
@@ -1221,8 +1251,8 @@ document.addEventListener('input', e => {
     const ft = $('#footTotal'); if (ft) ft.innerHTML = totalBawah();
     if (k === 'tanggal') { const s = document.querySelector('select[data-f=bulan]'); if (s) s.value = F.bulan; }
   } else if (formJenis === 'lunas') {
-    const m = S.masuk.find(x => x.id === F.id), li = $('#lunasInfo');
-    if (li) li.innerHTML = infoLunas(m);
+    if (k === 'bayarLunas') F.bayarManual = true;
+    segarkanLunas();
   } else if (formJenis === 'jadwal') {
     if (k === 'tanggal') $('#hariJadwal').textContent = v ? 'Fotoshoot: ' + tglPanjang(v) : 'Pilih tanggal fotoshoot';
     segarkanJadwal();
