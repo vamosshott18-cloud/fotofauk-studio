@@ -720,7 +720,11 @@ h1{font-size:26px} h2{font-size:18px}
 
 /* kartu tosca: tulisan putih supaya kontras (tosca sedikit lebih gelap agar putih terbaca) */
 .saldo,.stat.utama,.cl-kpi .utama{background:linear-gradient(135deg,#12A9A7,#0B8C8A);border-color:#0B8C8A;color:#fff}
-.saldo *,.stat.utama *,.cl-kpi .utama *{color:#fff}
+.saldo *,.stat.utama *,.stat.utama .lbl,.stat.utama small,.cl-kpi .utama *,.cl-kpi .utama span,.cl-kpi .utama small{color:#fff}
+/* semua tombol & penanda berlatar tosca: tulisan putih */
+.btn-utama,.kal button.pilih,.chip.selesai,.chip.st4,.fab,.bagian-head .no,.langkah button.on i{background:#0E9F9D;border-color:#0E9F9D;color:#fff}
+.kal button.pilih *{color:#fff}
+.btn-utama:hover{background:#0B8C8A;border-color:#0B8C8A}
 .saldo-sub span{background:rgba(255,255,255,.2)}
 .saldo .aksi-cepat svg,.saldo .aksi-cepat svg *{color:var(--teal-s)}
 
