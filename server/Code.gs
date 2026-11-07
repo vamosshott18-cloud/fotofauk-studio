@@ -92,10 +92,28 @@ function doPost(e) {
     sh.getDataRange().getValues().slice(1).forEach(v => {
       if (Number(v[2]) > sejak) rows.push({ koleksi: v[0], id: String(v[1]), diubah: Number(v[2]), hapus: !!Number(v[3]), data: Number(v[3]) ? null : JSON.parse(v[4] || 'null') });
     });
+    backupMingguan_();
     return json_({ ok: true, waktu: sekarang, rows });
   } finally {
     lock.releaseLock();
   }
+}
+
+// Backup otomatis: seminggu sekali sheet "data" disalin ke file "FotoFauk Studio (backup mingguan)",
+// satu tab per minggu, 8 minggu terakhir disimpan. Jalan sendiri saat ada yang sinkron — tanpa izin tambahan.
+function backupMingguan_() {
+  const props = PropertiesService.getScriptProperties(), terakhir = Number(props.getProperty('BACKUP_TERAKHIR') || 0);
+  if (Date.now() - terakhir < 7 * 864e5) return;
+  try {
+    let ss = props.getProperty('BACKUP_ID') ? SpreadsheetApp.openById(props.getProperty('BACKUP_ID')) : null;
+    if (!ss) { ss = SpreadsheetApp.create('FotoFauk Studio (backup mingguan)'); props.setProperty('BACKUP_ID', ss.getId()); }
+    const nama = Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd'), nilai = sheet_().getDataRange().getValues();
+    const tab = ss.getSheetByName(nama) || ss.insertSheet(nama, 0);
+    tab.clear(); tab.getRange(1, 1, nilai.length, nilai[0].length).setValues(nilai);
+    ss.getSheets().filter(s => /^\d{4}-\d{2}-\d{2}$/.test(s.getName())).sort((a, b) => b.getName().localeCompare(a.getName())).slice(8).forEach(s => ss.deleteSheet(s));
+    const awal = ss.getSheetByName('Sheet1') || ss.getSheetByName('Lembar1'); if (awal && ss.getSheets().length > 1) ss.deleteSheet(awal);
+    props.setProperty('BACKUP_TERAKHIR', String(Date.now()));
+  } catch (err) { console.error('backup gagal: ' + err); }
 }
 
 function json_(o) {

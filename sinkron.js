@@ -7,7 +7,7 @@
 
 const DB_BAWAAN = 'https://script.google.com/macros/s/AKfycbzaW9N6WNjd1kQBjXKNl8aQsXxFLTLYLjLYV3xv_qan-blr2FVjLt-VbrZ9Vvbb4HHDmw/exec';
 const DB_KEY = 'sf_db', PIN_KEY = 'sf_pin', SEJAK_KEY = 'sf_sejak', TERKIRIM_KEY = 'sf_terkirim';
-const KOLEKSI = ['jadwal', 'masuk', 'keluar'];
+const KOLEKSI = ['jadwal', 'masuk', 'keluar', 'sampah'];
 let dbUrl = bacaLS(DB_KEY) || DB_BAWAAN;
 let pin = bacaLS(PIN_KEY) || '';
 let sejak = Number(bacaLS(SEJAK_KEY)) || 0;
@@ -21,7 +21,7 @@ function tulisLS(k, v) { try { v == null ? localStorage.removeItem(k) : localSto
 function semuaCatatan() {
   const out = {};
   KOLEKSI.forEach(k => (S[k] || []).forEach(r => { out[k + '|' + r.id] = JSON.stringify(r); }));
-  const { jadwal, masuk, keluar, ...konfig } = S;
+  const { jadwal, masuk, keluar, sampah, ...konfig } = S;
   out['setelan|utama'] = JSON.stringify(konfig);
   return out;
 }
@@ -112,7 +112,8 @@ function layarPin(pesan = '') {
     el.innerHTML = `<form class="kotak-pin" autocomplete="off">
       <img src="icon.svg" alt="">
       <h1>FotoFauk Studio</h1>
-      <p>Masukkan PIN studio. Cukup sekali di perangkat ini.</p>
+ <p>Masukkan nama kamu dan PIN studio. Cukup sekali di perangkat ini.</p>
+      <input id="isiNama" class="isi-nama" autocomplete="name" placeholder="Nama kamu (mis. Febri)" aria-label="Nama kamu" value="">
       <input id="isiPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="••••••" aria-label="PIN studio">
       <b id="pesanPin" role="alert"></b>
       <button class="btn btn-utama" type="submit">Masuk</button>
@@ -120,8 +121,10 @@ function layarPin(pesan = '') {
     document.body.appendChild(el);
     el.querySelector('form').addEventListener('submit', async ev => {
       ev.preventDefault();
-      const v = el.querySelector('#isiPin').value.trim(), tombol = el.querySelector('button');
+      const v = el.querySelector('#isiPin').value.trim(), tombol = el.querySelector('button'), nm = el.querySelector('#isiNama').value.trim();
+      if (!nm) { tulisPesanPin('Isi nama kamu dulu — dipakai untuk mencatat siapa yang menginput'); el.querySelector('#isiNama').focus(); return; }
       if (!/^\d{6,8}$/.test(v)) { tulisPesanPin('PIN 6–8 angka'); return; }
+      tulisLS('sf_nama', nm);
       tombol.disabled = true; tulisPesanPin('Memeriksa…');
       try {
         if (pinPertama) {
@@ -143,7 +146,8 @@ function layarPin(pesan = '') {
     });
   }
   el.hidden = false; tulisPesanPin(pesan);
-  setTimeout(() => el.querySelector('#isiPin').focus(), 50);
+  const nmIn = el.querySelector('#isiNama'); nmIn.value = bacaLS('sf_nama') || '';
+  setTimeout(() => (nmIn.value ? el.querySelector('#isiPin') : nmIn).focus(), 50);
 }
 function tulisPesanPin(t) { const b = document.getElementById('pesanPin'); if (b) b.textContent = t; }
 
@@ -156,8 +160,9 @@ function keluarPerangkat() {
 
 function kartuDatabase() {
   return `<div class="card lebar"><h2>Database Google Sheet</h2>
-    <div class="baris"><span class="status-db ${statusSinkron}"></span><div class="isi"><b id="teksStatusDb">${TEKS_STATUS[statusSinkron]}</b><span>Semua HP/PC studio otomatis memakai data yang sama. Perangkat baru cukup buka aplikasi lalu isi PIN studio sekali.</span></div>
+    <div class="baris"><span class="status-db ${statusSinkron}"></span><div class="isi"><b id="teksStatusDb">${TEKS_STATUS[statusSinkron]}</b> ${typeof tanya === 'function' ? tanya('sinkron') : ''}<span>Semua HP/PC studio otomatis memakai data yang sama. Perangkat baru cukup buka aplikasi lalu isi PIN studio sekali.</span></div>
       <button class="btn btn-kecil" data-act="sinkronSekarang">Sinkron sekarang</button></div>
+    <div class="baris"><div class="isi"><b>Nama di perangkat ini: ${esc(bacaLS('sf_nama') || '—')}</b><span>Tercatat sebagai penginput setiap jadwal, pemasukan & pengeluaran dari perangkat ini.</span></div><button class="btn btn-kecil" data-act="gantiNama">Ganti nama</button></div>
     <div class="baris"><div class="isi"><b>Ganti PIN studio</b><span>Semua perangkat lain akan diminta PIN baru.</span></div><button class="btn btn-kecil" data-act="gantiPinDb">Ganti PIN</button></div>
     <div class="baris"><div class="isi"><b>Keluar dari perangkat ini</b><span>Data di Google Sheet tetap aman; data di perangkat ini dihapus dan perlu PIN lagi.</span></div><button class="btn btn-kecil btn-hapus" data-act="keluarDb">Keluar</button></div>
   </div>`;
@@ -165,6 +170,7 @@ function kartuDatabase() {
 
 Object.assign(AKSI, {
   sinkronSekarang: () => sinkron(),
+  gantiNama: () => { const v = prompt('Nama kamu (tercatat sebagai penginput):', bacaLS('sf_nama') || ''); if (v == null || !v.trim()) return; tulisLS('sf_nama', v.trim()); render(); toast('Nama disimpan'); },
   gantiPinDb: async () => {
     const baru = prompt('PIN baru (6–8 angka):'); if (baru == null) return;
     if (!/^\d{6,8}$/.test(baru.trim())) { toast('PIN harus 6–8 angka'); return; }
@@ -186,6 +192,7 @@ Object.assign(AKSI, {
   if (bacaLS(DB_KEY) === DB_BAWAAN) tulisLS(DB_KEY, null);
   setStatus(statusSinkron);
   if (dbUrl) {
+    if (pin && !bacaLS('sf_nama')) setTimeout(() => { const v = prompt('Nama kamu? (dipakai untuk mencatat siapa yang menginput data)'); if (v && v.trim()) { tulisLS('sf_nama', v.trim()); render(); } }, 800);
     sinkron();
     setInterval(() => { if (document.visibilityState === 'visible') sinkron(); }, 30000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sinkron(); });

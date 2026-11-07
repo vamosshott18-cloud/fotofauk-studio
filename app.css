@@ -1,7 +1,7 @@
 :root{
   --teal:#11B3B1; --teal-t:#0B8C8A; --teal-s:#0B6B6A;
   --pale:#E7FDFD; --cyan:#5FE5E9; --green:#BEDCAB; --yellow:#F8D74E;
-  --ink:#102A2C; --ink2:#456264; --muted:#7D9799;
+  --ink:#102A2C; --ink2:#3F5C5E; --muted:#5B7476;
   --line:#D5EBEB; --line2:#E8F4F4; --bg:#F4FBFB; --white:#FFFFFF;
   --red:#D2403A; --red-soft:#FCEBEA;
   --r:18px; --r-sm:12px;
@@ -757,3 +757,72 @@ h1{font-size:26px} h2{font-size:18px}
 .rinci-total{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--pale);font-weight:700}
 .rinci-total b,.rinci-grup>summary b,.rinci-item>summary b{font-weight:800;white-space:nowrap}
 @media (max-width:640px){ .rinci-isi{margin-left:14px} .rinci-item .tgl{width:64px} }
+
+/* ---- 2026-11-07: kontras teks kecil, target sentuh, fitur baru ---- */
+/* teks kecil minimal 12px; abu-abu --muted digelapkan (kontras ≥ 4,5:1 di putih) */
+.chip,.chip-btn,.pil,.bk-jam small,.bk-rp small,.trx-no small,.trx-rp small,.kas-nilai small,.sisa-lunas small,.hbar-lbl small,.kal .hd,.tabel th,.foot-total span,.dp-angka small,.cl-tgl{font-size:12px}
+.bantu,.stat small,.grafik-head .sub,.br-isi small,.kas-isi small,.dp-ringkas small,.kas-ringkas small{font-size:12.5px}
+/* layar sentuh: tombol kecil minimal 44px area ketuk */
+@media (pointer:coarse){
+  .x{width:44px;height:44px}
+  .btn-kecil{min-height:40px;padding:8px 14px}
+  .btn-ikon{width:44px;height:44px}
+  .qty button,.addon .qty button{width:40px;height:40px}
+  .seg button{min-height:40px}
+  .chip-btn,.pil[data-act]{min-height:34px;padding:6px 12px;font-size:12.5px}
+  .kal button{min-height:44px}
+  .tanya{width:26px;height:26px}
+}
+
+/* jejak penginput */
+.jejak{font-size:12px;color:var(--muted);font-weight:600;max-width:320px;line-height:1.35}
+/* tombol penjelasan */
+.tanya{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1.5px solid currentColor;background:transparent;color:var(--muted);font:800 12px/1 var(--sans);vertical-align:middle;margin-left:4px;padding:0;cursor:pointer;opacity:.85}
+.stat.utama .tanya,.saldo .tanya{color:#fff}
+.pop-tanya{position:fixed;z-index:120;background:var(--ink);color:#fff;font-size:13.5px;line-height:1.5;font-weight:500;padding:12px 14px;border-radius:12px;box-shadow:var(--shadow-lg)}
+/* toast dengan tombol Batalkan / Nota */
+.toast{display:flex;align-items:center;gap:14px;pointer-events:none;width:max-content;justify-content:space-between}
+@media (max-width:640px){ .toast{width:calc(100vw - 32px);bottom:96px} }
+.toast.on{pointer-events:auto}
+.toast button{border:0;background:transparent;color:#7FE3E1;font:800 14px var(--sans);padding:6px 4px;cursor:pointer;min-height:36px}
+/* Beranda: progres gaji + ruko */
+.target-gaji{margin-top:12px;background:rgba(255,255,255,.14);border-radius:14px;padding:10px 12px;cursor:pointer}
+.target-gaji div{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700}
+.target-gaji i{display:block;height:7px;border-radius:99px;background:rgba(255,255,255,.28);margin:7px 0 5px;overflow:hidden}
+.target-gaji em{display:block;height:100%;border-radius:99px;background:#fff}
+.target-gaji small{font-size:12px;font-weight:600;opacity:.92}
+.stat-bar{display:block;height:7px;border-radius:99px;background:rgba(255,255,255,.3);margin:6px 0 6px;overflow:hidden}
+.stat-bar em{display:block;height:100%;background:#fff;border-radius:99px}
+.br-dot.abu{background:#9FB4B5}
+.br-head{gap:8px}
+.btn-cari{display:inline-flex;align-items:center;gap:6px}
+.btn-cari svg,.btn-ikon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round}
+/* cari customer */
+.cari-cust{border-color:var(--line)}
+.cari-cust input{flex:1;border:0;background:transparent;font:inherit;font-size:16px;outline:none;min-width:0;color:var(--ink)}
+.cari-row{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid #EEF6F6;cursor:pointer}
+.cari-row:hover{background:var(--bg)}
+.cari-tgl{width:68px;flex:none;font-size:13px;font-weight:800;color:var(--ink2);line-height:1.2}
+.cari-tgl small{display:block;font-weight:600;font-size:12px;color:var(--muted)}
+.cari-tgl.hari-ini{color:#0B8C8A}
+.pil[data-act]{border:0;cursor:pointer}
+/* isi otomatis customer lama */
+.saran{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:-4px 0 10px;background:var(--white);box-shadow:var(--shadow)}
+.saran[hidden]{display:none}
+.saran-item{display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:0;border-bottom:1px solid var(--line2);background:transparent;padding:10px 12px;text-align:left;font:inherit;cursor:pointer;min-height:44px}
+.saran-item:last-child{border-bottom:0}
+.saran-item:hover{background:var(--pale)}
+.saran-item small{color:var(--muted);font-size:12.5px}
+/* kirim ke customer + nota */
+.kirim-cust{display:flex;flex-direction:column;gap:8px;margin-top:12px;padding:14px;border:1px solid var(--line2);border-radius:16px;background:var(--white)}
+.kirim-cust .btn{justify-content:flex-start;text-align:left}
+.nota-body{display:flex;justify-content:center;background:var(--bg)}
+.nota-img{width:100%;max-width:420px;border-radius:12px;box-shadow:var(--shadow)}
+/* Laporan: tab */
+.lap-tab{margin-left:auto}
+.lap-tab button{min-width:84px}
+@media (max-width:640px){ .lap-tab{margin-left:0;width:100%;display:grid;grid-template-columns:repeat(4,1fr)} .lap-tab button{min-width:0;padding:8px 2px} }
+.closing-isi .daftar-isi{margin:8px 0 0;padding-left:18px;color:var(--ink2);line-height:1.7;font-size:14px}
+/* layar PIN: nama */
+.kotak-pin .isi-nama{width:100%;font:inherit;font-size:16px;padding:12px;border:1.5px solid #D5E3E3;border-radius:14px;margin-top:6px;text-align:center}
+@media print{ .lap-tab,.tanya{display:none} }

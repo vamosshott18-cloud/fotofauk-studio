@@ -73,7 +73,7 @@ function dataAwal() {
     paket, cetakHarga: harga,
     fotografer: N.fotografer || [], editor: N.editor || [],
     addon: ADDON_AWAL.map(a => ({ ...a })),
-    jadwal: [], masuk, keluar, posisiKas: {}, impor: N.masuk.length ? ['nov-appsheet'] : []
+    jadwal: [], masuk, keluar, sampah: [], posisiKas: {}, impor: N.masuk.length ? ['nov-appsheet'] : []
   };
   tambahImpor(s);
   return s;
@@ -102,6 +102,7 @@ function muat() {
     if (s && s.versi === 2) {
       s.paket.forEach(p => { if (p.fee == null) Object.assign(p, feeAwal(p.jenis, p.paket)); }); delete s.feeAturan;
       s.impor ||= ['nov-appsheet']; s.posisiKas ||= {}; delete s.setelan.gaji; s.setelan.dpPersen ??= 30; s.addon ||= ADDON_AWAL.map(a => ({ ...a }));
+      s.sampah = (s.sampah || []).filter(x => Date.now() - Date.parse(x.waktu) < 30 * 864e5);
       tambahImpor(s); return s;
     }
   } catch (e) {}
@@ -111,6 +112,48 @@ let S = muat();
 function simpan() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Gagal menyimpan di perangkat ini'); } window.setelahSimpan?.(); }
 function ui(k, v) { try { if (v === undefined) return localStorage.getItem('sf_' + k); localStorage.setItem('sf_' + k, v); } catch (e) {} }
 
+// Jejak: siapa yang menginput / terakhir mengubah (nama orang di perangkat ini, diisi sekali)
+const namaSaya = () => ui('nama') || '';
+function cap(r, baru) {
+  const t = new Date().toISOString();
+  if (baru) { r.dibuat = t; r.oleh = namaSaya(); } else { r.diubahPada = t; r.diubahOleh = namaSaya(); }
+  return r;
+}
+const jamTgl = t => { const d = new Date(t); return d.getDate() + ' ' + BULAN[d.getMonth()].slice(0, 3) + ' ' + String(d.getHours()).padStart(2, '0') + '.' + String(d.getMinutes()).padStart(2, '0'); };
+const jejak = r => [r.dibuat ? `diinput ${r.oleh ? esc(r.oleh) + ' · ' : ''}${jamTgl(r.dibuat)}` : '', r.diubahPada ? `diubah ${r.diubahOleh ? esc(r.diubahOleh) + ' · ' : ''}${jamTgl(r.diubahPada)}` : ''].filter(Boolean).join(' — ');
+
+// Tempat sampah: hapus langsung (tanpa konfirmasi) tapi bisa dibatalkan / dipulihkan 30 hari
+function buang(koleksi, id) {
+  const data = S[koleksi].find(x => x.id === id); if (!data) return;
+  const ikut = koleksi === 'masuk' ? S.keluar.filter(k => k.dari === id) : [];
+  S[koleksi] = S[koleksi].filter(x => x.id !== id);
+  if (ikut.length) S.keluar = S.keluar.filter(k => k.dari !== id);
+  const sid = uid();
+  (S.sampah ||= []).push({ id: sid, koleksi, data, ikut, waktu: new Date().toISOString(), oleh: namaSaya() });
+  simpan(); tutupModal(); render();
+  const nama = data.customer || data.nama || 'catatan';
+  toast(`${{ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran' }[koleksi]} ${nama} dihapus`, { label: 'Batalkan', fn: () => pulihkan(sid) });
+}
+function pulihkan(sid) {
+  const x = (S.sampah || []).find(y => y.id === sid); if (!x) return;
+  S[x.koleksi].push(x.data); (x.ikut || []).forEach(k => S.keluar.push(k));
+  S.sampah = S.sampah.filter(y => y.id !== sid);
+  simpan(); render(); toast('Dipulihkan');
+}
+
+// Penjelasan singkat (ikon ?) untuk istilah yang sering membingungkan
+const BANTUAN = {
+  dp: 'DP = uang muka/titipan. Belum dihitung pemasukan bulan ini supaya laporan tidak "kelebihan". Saat customer melunasi, total penuh (DP + pelunasan) masuk pemasukan di bulan pelunasan.',
+  lunas: 'Pelunasan memindahkan booking dari Catatan DP ke pemasukan bulan ini. Kalau ada tambahan saat hari H (add-on), isi di bagian Add-on supaya tagihan & fee ikut naik.',
+  bersih: 'Total bersih = semua pemasukan lunas − semua pengeluaran (fee, cetak, operasional) bulan ini. Gaji tim & ruko belum dikurangi.',
+  laba: 'Laba bersih = Total bersih − gaji tim − ruko. Di tengah bulan angkanya bisa minus karena gaji & ruko dihitung penuh, jadi ditampilkan sebagai progres menutup gaji + ruko.',
+  bagi: 'Laba bersih dibagi Investor / Kas / Studio sesuai persen di Atur. Kalau laba minus, belum ada yang dibagi.',
+  bca: 'Posisi uang: isi uang cash dan saldo BRI. Sisanya dianggap ada di BCA (Total bersih − cash − BRI), sama seperti di Excel.',
+  fee: 'Fee fotografer otomatis: Paket 1 = 20%, paket lain 25%, Pas Photo Rp 10.000. Fee & biaya cetak otomatis masuk Pengeluaran dengan status BELUM sampai dibayar.',
+  sinkron: 'Titik hijau = data sudah tersimpan di Google Sheet studio dan terlihat di semua HP/PC. Kuning = sedang mengirim. Merah = offline, nanti dikirim otomatis.'
+};
+const tanya = k => `<button type="button" class="tanya" data-act="tanya" data-v="${k}" aria-label="Penjelasan">?</button>`;
+
 const hariIni = iso(new Date());
 let tab = ui('tab') || 'beranda';
 if (!['beranda', 'jadwal', 'kas', 'masuk', 'keluar', 'laba', 'atur'].includes(tab)) tab = 'beranda';
@@ -119,6 +162,7 @@ let hariPilih = hariIni;
 let bulanKal = keTgl(hariIni.slice(0, 8) + '01');
 let periode = hariIni.slice(0, 7); // 'YYYY-MM' atau 'semua'
 let filterKeluar = 'semua';
+let lapTab = ui('lapTab') || 'ringkasan';
 
 const daftarJenis = () => [...new Set(S.paket.map(p => p.jenis.trim()))];
 const paketDari = jenis => S.paket.filter(p => p.jenis.trim() === jenis);
@@ -174,6 +218,12 @@ function dataBulan(p) {
   const bersih = tm - tk, laba = bersih - gaji - ruko;
   return { p, y, mo, masuk, keluar, tm, tk, bersih, tim, gaji, ruko, laba, ada: masuk.length + keluar.length > 0,
     investor: laba * st.investor / 100, kas: laba * st.kas / 100, studio: laba * st.studio / 100 };
+}
+
+// Di bulan berjalan laba sering minus karena gaji + ruko dihitung penuh → tampilkan sebagai progres menutupnya
+function progresLaba(D) {
+  const target = D.gaji + D.ruko, berjalan = D.p === hariIni.slice(0, 7);
+  return { berjalan, target, pct: target ? Math.max(0, Math.min(100, Math.round(D.bersih / target * 100))) : 100, kurang: Math.max(0, target - D.bersih) };
 }
 
 // ---------- render ----------
@@ -248,6 +298,7 @@ function viewJadwal() {
         <button class="btn btn-ikon" data-act="bulanKal" data-d="-1" aria-label="Bulan sebelumnya">‹</button>
         <h2>${BULAN[m]} ${y}</h2>
         <button class="btn btn-kecil" data-act="keHariIni">Hari ini</button>
+        <button class="btn btn-ikon" data-act="cariCust" aria-label="Cari customer">${ikon('cari')}</button>
         <button class="btn btn-ikon" data-act="bulanKal" data-d="1" aria-label="Bulan berikutnya">›</button>
       </div>
       <div class="kal">${sel}</div>
@@ -258,7 +309,7 @@ function viewJadwal() {
     </section>
     <section>
       <div class="card">
-        <div class="hari-head"><h2>${esc(tglPanjang(hariPilih))}</h2><button class="btn btn-utama btn-kecil" data-act="tambah">+ Jadwal</button></div>
+        <div class="hari-head"><h2>${esc(tglPanjang(hariPilih))}</h2><button class="btn btn-utama btn-kecil" data-act="tambah">+ Booking</button></div>
         <div class="daftar">${hari.length ? hari.map(j => kartuJadwal(j)).join('') : '<div class="kosong">Belum ada jadwal di tanggal ini.</div>'}</div>
       </div>
       <div class="card" style="margin-top:14px">
@@ -277,7 +328,8 @@ const IKON = {
   laporan: '<path d="M5 20V11M12 20V5M19 20v-6"/>', closing: '<path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21z"/><path d="M10 8h4M10 12h4"/>',
   atur: '<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
   lunas: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>',
-  booking: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M12 11v6M9 14h6"/>'
+  booking: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M8 3v4M16 3v4M12 11v6M9 14h6"/>',
+  cari: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'
 };
 const ikon = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${IKON[k]}</svg>`;
 
@@ -287,8 +339,20 @@ function viewBeranda() {
   const besok = iso(new Date(Date.now() + 864e5)), besokList = S.jadwal.filter(j => j.tanggal === besok);
   const feeBelum = S.keluar.filter(k => k.status === 'BELUM' && (k.jenis === 'fee' || k.jenis === 'edit'));
   const jam = new Date().getHours(), sapa = jam < 11 ? 'Selamat pagi' : jam < 15 ? 'Selamat siang' : jam < 19 ? 'Selamat sore' : 'Selamat malam';
-  const menu = [['jadwal', 'Jadwal', 'a1', 'buka', 'jadwal'], ['masuk', 'Pemasukan', 'a1', 'buka', 'masuk'], ['keluar', 'Pengeluaran', 'a4', 'buka', 'keluar'], ['dp', 'DP', 'a3', 'bukaKas', 'dp'],
-    ['fee', 'Fee', 'a2', 'bukaFee', ''], ['laporan', 'Laporan', 'a2', 'buka', 'laba'], ['closing', 'Closing', 'a3', 'buka', 'laba'], ['atur', 'Atur', 'a4', 'buka', 'atur']];
+  // shortcut "lihat data" yang tidak ada di menu bawah (Jadwal, Riwayat, Laporan sudah ada di sana)
+  const menu = [['masuk', 'Pemasukan', 'a1', 'buka', 'masuk'], ['keluar', 'Pengeluaran', 'a4', 'buka', 'keluar'], ['dp', 'Catatan DP', 'a3', 'bukaKas', 'dp'], ['fee', 'Fee tim', 'a2', 'bukaFee', '']];
+  const PL = progresLaba(D);
+  // perlu tindakan: sudah lewat tapi belum lunas, hasil belum selesai, cetak belum dibayar
+  const lewatBelumLunas = S.jadwal.filter(j => j.tanggal < hariIni && (pemasukanJadwal(j)?.bayar ?? 'belum') !== 'lunas');
+  const belumSelesai = S.jadwal.filter(j => j.tanggal < hariIni && j.status !== 'Selesai');
+  const cetakBelum = S.keluar.filter(k => k.status === 'BELUM' && k.jenis === 'cetak');
+  const tindakan = [
+    lewatBelumLunas.length && ['merah', 'lewatBelumLunas', `${lewatBelumLunas.length} sudah foto tapi belum lunas`, 'jadwal sudah lewat · tagih pelunasannya'],
+    feeBelum.length && ['merah', 'bukaFee', `${feeBelum.length} fee belum dibayar`, rp(feeBelum.reduce((s, k) => s + totalKeluar(k), 0))],
+    dpList.length && ['kuning', 'bukaKasDp', `${dpList.length} DP belum lunas`, 'sisa tagihan ' + rp(dpList.reduce((s, m) => s + sisaTagihan(m), 0))],
+    belumSelesai.length && ['kuning', 'bukaBelumSelesai', `${belumSelesai.length} hasil foto belum selesai`, 'edit / upload / kirim ke customer'],
+    cetakBelum.length && ['abu', 'bukaCetakBelum', `${cetakBelum.length} cetak belum dibayar`, rp(cetakBelum.reduce((s, k) => s + totalKeluar(k), 0))]
+  ].filter(Boolean);
   const baris = j => { const mj = pemasukanJadwal(j); return `<div class="br-row tk" role="button" tabindex="0" data-act="editJadwal" data-id="${j.id}"><span class="br-jam">${esc(j.jam || '--:--')}</span><span class="br-isi"><b>${esc(j.customer)}</b><small>${esc(j.jenis.replace(/^Paket /, ''))} · ${esc(j.paket)}</small></span>${mj ? (mj.bayar === 'dp' ? '<span class="pil dp">DP</span>' : '<span class="pil ok">Lunas</span>') : '<span class="pil">Belum bayar</span>'}</div>`; };
   const kas = itemKas('semua', p).slice(0, 5);
   return `<div class="beranda">
@@ -298,21 +362,21 @@ function viewBeranda() {
     <small>Bersih ${BULAN[D.mo - 1]}</small>
     <b data-hitung="${D.bersih}">${rp(D.bersih)}</b>
     <div class="saldo-sub"><span>Masuk ${rpS(D.tm)}</span><span>Keluar ${rpS(D.tk)}</span>${dpList.length ? `<span>DP titipan ${rpS(dpList.reduce((s, m) => s + (Number(m.dp) || 0), 0))}</span>` : ''}</div>
+    ${PL.target ? `<div class="target-gaji" role="button" tabindex="0" data-act="buka" data-v="laba"><div><span>Menutup gaji tim + ruko</span><b>${PL.pct}%</b></div><i><em style="width:${PL.pct}%"></em></i><small>${PL.kurang ? 'kurang ' + rp(PL.kurang) + ' lagi' : 'sudah tertutup — sisanya laba'}</small></div>` : ''}
     <div class="aksi-cepat">
-      <button class="tk" data-act="tambahJenis" data-v="jadwal">${ikon('booking')}<span>Jadwal</span></button>
+      <button class="tk" data-act="tambahJenis" data-v="jadwal">${ikon('booking')}<span>Booking</span></button>
+      <button class="tk" data-act="tambahJenis" data-v="lunas">${ikon('lunas')}<span>Pelunasan</span></button>
       <button class="tk" data-act="tambahJenis" data-v="masuk">${ikon('masuk')}<span>Masuk</span></button>
       <button class="tk" data-act="tambahJenis" data-v="keluar">${ikon('keluar')}<span>Keluar</span></button>
-      <button class="tk" data-act="buka" data-v="laba">${ikon('closing')}<span>Closing</span></button>
     </div>
   </section>
   <section class="menu-ikon">${menu.map(([k, n, w, act, v], i) => `<button class="tk" data-act="${act}" data-v="${v}" style="--i:${i}"><i class="${w}">${ikon(k)}</i><span>${n}</span></button>`).join('')}</section>
   <div class="br-dua">
-    <section class="br-kartu"><div class="br-head"><h2>Hari ini</h2><button class="link" data-act="buka" data-v="jadwal">Lihat jadwal</button></div>
+    <section class="br-kartu"><div class="br-head"><h2>Hari ini</h2><button class="btn btn-kecil btn-cari" data-act="cariCust">${ikon('cari')}Cari customer</button><button class="link" data-act="buka" data-v="jadwal">Jadwal</button></div>
       ${hariIniList.length ? hariIniList.map(baris).join('') : '<p class="br-kosong">Belum ada jadwal hari ini.</p>'}
       ${besokList.length ? `<div class="br-sub">Besok · ${besokList.length} jadwal</div>${besokList.slice(0, 3).map(baris).join('')}` : ''}
-      ${feeBelum.length || dpList.length ? `<div class="br-sub">Perlu tindakan</div>
-        ${feeBelum.length ? `<div class="br-row tk" role="button" tabindex="0" data-act="bukaFee"><span class="br-dot merah"></span><span class="br-isi"><b>${feeBelum.length} fee belum dibayar</b><small>${rp(feeBelum.reduce((s, k) => s + totalKeluar(k), 0))}</small></span><span class="panah">›</span></div>` : ''}
-        ${dpList.length ? `<div class="br-row tk" role="button" tabindex="0" data-act="bukaKas" data-v="dp"><span class="br-dot kuning"></span><span class="br-isi"><b>${dpList.length} DP belum lunas</b><small>sisa tagihan ${rp(dpList.reduce((s, m) => s + sisaTagihan(m), 0))}</small></span><span class="panah">›</span></div>` : ''}` : ''}
+      ${tindakan.length ? `<div class="br-sub">Perlu tindakan</div>
+        ${tindakan.map(([w, act, b, sm]) => `<div class="br-row tk" role="button" tabindex="0" data-act="${act}"><span class="br-dot ${w}"></span><span class="br-isi"><b>${b}</b><small>${sm}</small></span><span class="panah">›</span></div>`).join('')}` : ''}
     </section>
     <section class="br-kartu"><div class="br-head"><h2>Riwayat terakhir</h2><button class="link" data-act="buka" data-v="kas">Semua</button></div>
       ${kas.length ? kas.map(barisKas).join('') : '<p class="br-kosong">Belum ada transaksi bulan ini.</p>'}
@@ -340,7 +404,8 @@ function viewKas() {
   const items = itemKas(filterKas, periode), per = {};
   items.forEach(x => (per[x.tgl] ||= []).push(x));
   const tm = items.filter(x => x.jenis === 'masuk').reduce((s, x) => s + x.nilai, 0), tk = -items.filter(x => x.jenis === 'keluar').reduce((s, x) => s + x.nilai, 0);
-  return `<div class="judul"><div><h1>Riwayat</h1><div class="sub">Pemasukan, pengeluaran, dan DP dalam satu daftar</div></div></div>
+  return `<div class="judul"><div><h1>Riwayat</h1><div class="sub">Pemasukan, pengeluaran, dan DP dalam satu daftar</div></div>
+    <div class="kanan"><button class="btn btn-kecil" data-act="tambahJenis" data-v="masuk">+ Masuk</button><button class="btn btn-kecil" data-act="tambahJenis" data-v="keluar">+ Keluar</button></div></div>
   <div class="card bar-atas">${pilihPeriode(true)}
     <div class="seg" style="margin-left:auto">${[['semua', 'Semua'], ['masuk', 'Masuk'], ['keluar', 'Keluar'], ['dp', 'DP']].map(([v, l]) => `<button class="${filterKas === v ? 'on' : ''}" data-act="filterKas" data-v="${v}">${l}</button>`).join('')}</div></div>
   <label class="cari-hp cari-kas"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariKas" type="search" value="${esc(cari)}" placeholder="Cari customer, paket, pengeluaran" autocomplete="off"></label>
@@ -352,11 +417,39 @@ function viewKas() {
 function menuTambah() {
   formJenis = null;
   const nDp = S.masuk.filter(m => m.bayar === 'dp').length;
-  const opsi = [['dp', 'dp', 'Booking', 'Customer bayar DP — belum dihitung pemasukan'],
+  const opsi = [['jadwal', 'booking', 'Booking', 'Jadwal foto + DP / lunas sekaligus'],
     ['lunas', 'lunas', 'Pelunasan', nDp ? `${nDp} customer masih DP — pilih untuk dilunasi` : 'Belum ada DP yang perlu dilunasi'],
-    ['jadwal', 'booking', 'Jadwal', 'Customer, paket, add-on, tanggal foto']];
+    ['cari', 'cari', 'Cari customer', 'Cari booking customer yang foto hari ini / kapan saja']];
+  if (['kas', 'masuk', 'keluar'].includes(tab)) opsi.push(['masuk', 'masuk', 'Pemasukan lain', 'Pembayaran di luar booking (cetak, pas foto walk-in)'], ['keluar', 'keluar', 'Pengeluaran', 'Fee, cetak, operasional']);
   bukaModal(`<div class="sheet-head"><h2>Tambah</h2><button class="x" data-act="tutup" aria-label="Tutup">×</button></div>
-  <div class="sheet-body"><div class="pilih-tambah">${opsi.map(([v, ik, n, d]) => `<button class="tk" data-act="tambahJenis" data-v="${v}"><i class="kas-ik ${v === 'jadwal' || v === 'lunas' ? 'masuk' : v}">${ikon(ik)}</i><span><b>${n}</b><small>${d}</small></span>${v === 'lunas' && nDp ? `<em class="hitung-dp">${nDp}</em>` : ''}</button>`).join('')}</div></div>`, 'kecil');
+  <div class="sheet-body"><div class="pilih-tambah">${opsi.map(([v, ik, n, d]) => `<button class="tk" data-act="tambahJenis" data-v="${v}"><i class="kas-ik ${v === 'jadwal' || v === 'lunas' || v === 'cari' ? 'masuk' : v}">${ikon(ik)}</i><span><b>${n}</b><small>${d}</small></span>${v === 'lunas' && nDp ? `<em class="hitung-dp">${nDp}</em>` : ''}</button>`).join('')}</div></div>`, 'kecil');
+}
+
+// Cari customer: booking jauh hari tetap ketemu — hari ini paling atas, lalu yang akan datang, lalu yang lewat
+function hasilCariCustomer(q) {
+  q = q.trim().toLowerCase();
+  const cocok = j => !q || [j.customer, j.kontak, j.ig, j.jenis, j.paket].some(v => String(v || '').toLowerCase().includes(q)) || (q.replace(/\D/g, '').length >= 4 && String(j.kontak || '').replace(/\D/g, '').includes(q.replace(/\D/g, '')));
+  const urut = (a, b) => { const ka = a.tanggal === hariIni ? 0 : a.tanggal > hariIni ? 1 : 2, kb = b.tanggal === hariIni ? 0 : b.tanggal > hariIni ? 1 : 2;
+    return ka - kb || (ka === 2 ? b.tanggal.localeCompare(a.tanggal) : (a.tanggal + (a.jam || '')).localeCompare(b.tanggal + (b.jam || ''))); };
+  const list = S.jadwal.filter(j => q ? cocok(j) : j.tanggal === hariIni).sort(urut).slice(0, 40);
+  if (!list.length) return `<div class="kosong">${q ? 'Tidak ada booking yang cocok dengan "' + esc(q) + '".' : 'Tidak ada jadwal hari ini. Ketik nama / no. HP customer.'}</div>`;
+  return list.map(j => { const mj = pemasukanJadwal(j), hi = j.tanggal === hariIni;
+    return `<div class="cari-row tk" role="button" tabindex="0" data-act="editJadwal" data-id="${j.id}">
+      <span class="cari-tgl ${hi ? 'hari-ini' : ''}">${hi ? 'HARI INI' : esc(tglPendek(j.tanggal))}<small>${esc(j.jam || '--:--')}</small></span>
+      <span class="br-isi"><b>${esc(j.customer)}</b><small>${esc(j.jenis.replace(/^Paket /, ''))} · ${esc(j.paket)}${j.tglBooking ? ' · booking ' + esc(tglPendek(j.tglBooking)) : ''}${j.kontak ? ' · ' + esc(j.kontak) : ''}</small></span>
+      ${mj ? (mj.bayar === 'dp' ? `<button class="pil dp" data-act="bukaLunas" data-id="${mj.id}">DP · lunasi</button>` : '<span class="pil ok">Lunas</span>') : '<span class="pil">Belum bayar</span>'}</div>`; }).join('');
+}
+function daftarJadwalModal(judul, list) {
+  formJenis = null;
+  bukaModal(`${kepala(judul)}<div class="sheet-body"><div class="daftar">${list.length ? list.map(j => kartuJadwal(j, true)).join('') : '<div class="kosong">Tidak ada.</div>'}</div></div>`, 'kecil');
+}
+function cariCustomer() {
+  formJenis = null;
+  bukaModal(`${kepala('Cari customer')}<div class="sheet-body">
+    <label class="cari-hp cari-cust"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariCust" type="search" placeholder="Nama, no. HP, atau IG customer" autocomplete="off"></label>
+    <small class="bantu" style="display:block;margin:8px 2px 4px">Booking dari jauh hari tetap muncul. Jadwal hari ini paling atas.</small>
+    <div id="hasilCust" class="daftar">${hasilCariCustomer('')}</div></div>`, 'kecil');
+  setTimeout(() => $('#cariCust')?.focus(), 60);
 }
 
 // Kartu pelunasan: semua customer yang masih DP, klik untuk melunasi
@@ -377,10 +470,10 @@ function blokDp(p, untukLaporan) {
   const baris = m => `<div class="dp-row">
       <div class="dp-isi" role="button" tabindex="0" data-act="editMasuk" data-id="${m.id}"><b>${esc(m.customer)}</b><span>${esc(namaPaket(m))} · DP tgl ${esc(tglPendek(m.tglDp || m.tanggal))}</span></div>
       <div class="dp-angka tnum"><b>${rp(m.dp)}</b><small>sisa ${rp(sisaTagihan(m))} dari ${rp(jumlahMasuk(m))}</small></div>
-      ${untukLaporan ? '' : `<button class="btn btn-kecil btn-utama" data-act="bukaLunas" data-id="${m.id}">Lunas</button>`}
+      ${untukLaporan ? '' : `${jadwalDari(m)?.kontak ? `<button class="btn btn-kecil" data-act="tagihWa" data-id="${m.id}" aria-label="Tagih lewat WhatsApp">Tagih WA</button>` : ''}<button class="btn btn-kecil btn-utama" data-act="bukaLunas" data-id="${m.id}">Lunas</button>`}
     </div>`;
   return `<div class="card dp-blok">
-    <div class="grafik-head"><h2>Catatan DP · ${lbl}</h2><span class="sub">uang titipan — belum dihitung pemasukan sampai lunas</span></div>
+    <div class="grafik-head"><h2>Catatan DP · ${lbl} ${tanya('dp')}</h2><span class="sub">uang titipan — belum dihitung pemasukan sampai lunas</span></div>
     <div class="dp-ringkas">
       <div><span>DP masuk ${p === 'semua' ? '' : 'bulan ini'}</span><b class="tnum">${rp(jml(D.ini))}</b><small>${D.ini.length} booking</small></div>
       <div><span>Belum lunas dari bulan lalu</span><b class="tnum">${rp(jml(D.lama))}</b><small>${D.lama.length} booking</small></div>
@@ -400,7 +493,7 @@ const ringkasLunas = m => `<div class="row"><span>Total booking</span><span clas
 function formLunas() {
   const m = S.masuk.find(x => x.id === F.id);
   if (!F.bayarManual) F.bayarLunas = sisaLunas(m);
-  return `${kepala('Pelunasan')}
+  return `${kepala('Pelunasan ' + tanya('lunas'))}
   <div class="sheet-body">
     ${bagian(1, esc(m.customer), esc(namaPaket(m)), `<div class="ringkas" style="margin:0" id="lunasRingkas">${ringkasLunas(m)}</div>`)}
     ${bagian(2, 'Add-on', 'Tambahan saat pelunasan (kalau ada) — jumlah bisa diketik', `<div class="addon-list">${barisAddon(F)}</div>
@@ -441,9 +534,10 @@ function simpanLunas() {
     m.tambahan = 'ADA';
     if (!m.feeManual) m.feeRp = feeOtomatis(m);
   }
+  cap(m); m.lunasOleh = namaSaya();
   Object.assign(m, { bayar: 'lunas', tglLunas: F.tanggal, tanggal: F.tanggal, bulan: bulanDari(F.tanggal), waktu: jamSekarang(), lunasNominal: bayar });
   sinkronKeluar(m); simpan(); tutupModal(); render();
-  toast(`Lunas — ${rp(jumlahMasuk(m))} masuk pemasukan ${BULAN[keTgl(m.tanggal).getMonth()]}`);
+  toast(`Lunas — ${rp(jumlahMasuk(m))} masuk pemasukan ${BULAN[keTgl(m.tanggal).getMonth()]}`, { label: 'Nota', fn: () => bukaNota(m.id) });
 }
 
 function viewMasuk() {
@@ -580,7 +674,7 @@ function viewLaporan() {
   const kas = S.posisiKas[periode] || { cash: 0, bri: 0 };
   const pct = (v, t) => t ? Math.round(v / t * 100) + '%' : '0%';
   const insight = `<b>${BULAN[D.mo - 1]} ${D.y}${periode === hariIni.slice(0, 7) ? ' (bulan berjalan, data s/d hari ini)' : ''}:</b> ${D.masuk.length} transaksi, uang masuk <b>${rp(D.tm)}</b> dan keluar <b>${rp(D.tk)}</b>, jadi tersisa <b>${rp(D.bersih)}</b>.
-    Setelah gaji tim ${rp(D.gaji)} dan ruko ${rp(D.ruko)}, <b>laba bersih ${rp(D.laba)}</b>${D.laba > 0 ? ` → Investor ${rp(D.investor)}, Kas ${rp(D.kas)}, Studio ${rp(D.studio)}` : ' (belum menutup gaji + ruko)'}.
+    ${(() => { const pl = progresLaba(D); return pl.berjalan && D.laba < 0 ? `Gaji tim ${rp(D.gaji)} + ruko ${rp(D.ruko)} baru tertutup <b>${pl.pct}%</b> (kurang ${rp(pl.kurang)}).` : `Setelah gaji tim ${rp(D.gaji)} dan ruko ${rp(D.ruko)}, <b>laba bersih ${rp(D.laba)}</b>${D.laba > 0 ? ` → Investor ${rp(D.investor)}, Kas ${rp(D.kas)}, Studio ${rp(D.studio)}` : ' (belum menutup gaji + ruko)'}.`; })()}
     ${(() => { const dp = dataDp(periode), n = dp.ini.length + dp.lama.length, t = [...dp.ini, ...dp.lama].reduce((s, m) => s + (Number(m.dp) || 0), 0); return n ? `Uang DP titipan <b>${rp(t)}</b> dari ${n} booking belum dihitung (lihat Catatan DP). ` : ''; })()}Penyumbang terbesar: <b>${esc(topPaket[0]?.[0] || '-')}</b> (${pct(topPaket[0]?.[1].v || 0, D.tm)} pemasukan). Hari paling ramai: <b>${HR_PANJANG[iHr]}</b>; tanggal terbesar: <b>${iTop + 1} ${BULAN[D.mo - 1]}</b> (${rp(hM[iTop])}).`;
 
   // rincian dikelompokkan per jenis
@@ -591,19 +685,27 @@ function viewLaporan() {
     ['Tanggal', esc(tglExcel(k.tanggal))], ['Harga satuan', rp(k.nominal)], ['Jumlah', k.jumlah], ['Total', rp(totalKeluar(k))], ['Status', k.status === 'BELUM' ? 'Belum dibayar' : 'Sudah dibayar']]);
   const bagi = [['Investor', D.investor, st.investor, WARNA.pas], ['Kas', D.kas, st.kas, WARNA.cetak], ['Studio', D.studio, st.studio, WARNA.paket]];
 
+  const lt = k => lapTab === k || lapTab === 'semua', PL = progresLaba(D);
   return `<div class="judul"><div><h1>Laporan Bulanan</h1><div class="sub">${esc(st.nama)} · Periode 01/${String(D.mo).padStart(2, '0')}/${D.y} – ${nHari}/${String(D.mo).padStart(2, '0')}/${D.y}</div></div>
     <div class="kanan no-print"><button class="btn btn-kecil" data-act="cetakLaporan">Cetak / PDF</button></div></div>
-  <div class="card bar-atas no-print">${pilihPeriode(false)}</div>
-  <div class="card closing-aksi no-print"><div><h2>Closing akhir bulan</h2><span class="sub">Hasil akhir ${BULAN[D.mo - 1]} ${D.y} untuk owner & investor</span></div>
-    <div class="closing-btn"><button class="btn" data-act="closingXlsx">Spreadsheet (.xlsx)</button><button class="btn" data-act="closingPdf">PDF</button><button class="btn btn-utama" data-act="closingWa">Teks WA</button></div></div>
+  <div class="card bar-atas no-print">${pilihPeriode(false)}
+    <div class="seg lap-tab" role="tablist">${[['ringkasan', 'Ringkasan'], ['grafik', 'Grafik'], ['rincian', 'Rincian'], ['closing', 'Closing']].map(([v, l]) => `<button role="tab" aria-selected="${lapTab === v}" class="${lapTab === v ? 'on' : ''}" data-act="lapTab" data-v="${v}">${l}</button>`).join('')}</div></div>
+  ${lt('ringkasan') ? `
   <div class="insight">${insight}</div>
   <div class="stats">
     <div class="stat"><div class="lbl"><i style="background:${WARNA.masuk}"></i>Total pemasukan</div><b class="tnum">${rp(D.tm)}</b>${selisih(D.tm, L.tm, lblLalu)}</div>
     <div class="stat"><div class="lbl"><i style="background:${WARNA.keluar}"></i>Total pengeluaran</div><b class="tnum">${rp(D.tk)}</b>${selisih(D.tk, L.tk, lblLalu, true)}</div>
-    <div class="stat"><div class="lbl">Total bersih</div><b class="tnum">${rp(D.bersih)}</b>${selisih(D.bersih, L.bersih, lblLalu)}</div>
-    <div class="stat utama"><div class="lbl">Laba bersih</div><b class="tnum">${rp(D.laba)}</b><small>setelah gaji tim & ruko</small></div>
+    <div class="stat"><div class="lbl">Total bersih ${tanya('bersih')}</div><b class="tnum">${rp(D.bersih)}</b>${selisih(D.bersih, L.bersih, lblLalu)}</div>
+    ${PL.berjalan && D.laba < 0 ? `<div class="stat utama"><div class="lbl">Menutup gaji + ruko ${tanya('laba')}</div><b class="tnum">${PL.pct}%</b><i class="stat-bar"><em style="width:${PL.pct}%"></em></i><small>kurang ${rp(PL.kurang)} dari ${rp(PL.target)} · laba dihitung setelah tertutup</small></div>`
+      : `<div class="stat utama"><div class="lbl">Laba bersih ${tanya('laba')}</div><b class="tnum">${rp(D.laba)}</b><small>setelah gaji tim & ruko</small></div>`}
   </div>
 
+  <div class="card"><div class="grafik-head"><h2>Pembagian laba bersih ${tanya('bagi')}</h2><span class="sub">Investor ${st.investor}% · Kas ${st.kas}% · Studio ${st.studio}%</span></div>
+    <div class="bagi">${bagi.map(([n, v, p, w]) => `<div class="bagi-item"><i style="background:${w}"></i><span>${n} <small>${p}%</small></span><b class="tnum ${v < 0 && !PL.berjalan ? 'neg' : ''}">${v < 0 && PL.berjalan ? '—' : rp(v)}</b></div>`).join('')}</div>
+    ${D.laba < 0 ? (PL.berjalan ? `<div class="peringatan" style="margin-top:12px">Bulan masih berjalan — gaji tim + ruko baru tertutup ${PL.pct}%. Laba dibagi setelah tertutup.</div>` : `<div class="peringatan merah" style="margin-top:12px">Laba bersih minus ${rp(-D.laba)} — pemasukan bulan ini belum menutup gaji tim + ruko.</div>`) : ''}</div>
+
+  ` : ''}
+  ${lt('grafik') ? `
   <div class="card"><div class="grafik-head"><h2>Kurva uang masuk vs keluar</h2><span class="sub">kumulatif per tanggal · arahkan/ketuk untuk detail</span></div>
     <div class="legend"><span><i style="background:${WARNA.masuk}"></i>Pemasukan</span><span><i style="background:${WARNA.keluar}"></i>Pengeluaran</span></div>
     <div class="chart" data-chart="kurva"></div></div>
@@ -634,11 +736,8 @@ function viewLaporan() {
       <div class="chart" data-chart="tren"></div></div>
   </div>
 
-  <div class="card"><div class="grafik-head"><h2>Pembagian laba bersih</h2><span class="sub">Investor ${st.investor}% · Kas ${st.kas}% · Studio ${st.studio}%</span></div>
-    <div class="bagi">${bagi.map(([n, v, p, w]) => `<div class="bagi-item"><i style="background:${w}"></i><span>${n} <small>${p}%</small></span><b class="tnum ${v < 0 ? 'neg' : ''}">${rp(v)}</b></div>`).join('')}</div>
-    ${D.laba < 0 ? `<div class="peringatan merah" style="margin-top:12px">Laba bersih minus ${rp(-D.laba)} — pemasukan bulan ini belum menutup gaji tim + ruko.</div>` : ''}</div>
-
-  <div class="judul" style="margin-top:26px"><div><h1 style="font-size:24px">Rincian seperti laporan Excel</h1><div class="sub">Laporan harian pemasukan, pengeluaran, total, team, ruko, laba bersih</div></div></div>
+  ` : ''}
+  ${lt('rincian') ? `
   ${blokDp(periode, true)}
   <div class="dua rinci-dua">
     <div class="card"><div class="grafik-head"><h2>Rincian pemasukan</h2><span class="sub">ketuk untuk lihat isinya</span></div>
@@ -652,7 +751,7 @@ function viewLaporan() {
       <div class="row"><span>Total keseluruhan</span><b class="tnum">${rp(D.tm)}</b></div>
       <div class="row"><span>Total pengeluaran</span><span class="tnum">− ${rp(D.tk)}</span></div>
       <div class="row total"><span>Total bersih</span><b class="tnum">${rp(D.bersih)}</b></div></div>
-      <h2 style="margin-top:16px">Posisi uang</h2>
+      <h2 style="margin-top:16px">Posisi uang ${tanya('bca')}</h2>
       <div class="grid3">
         <label class="f"><span>Cash</span><input class="uang tnum" data-kas="cash" inputmode="numeric" value="${titik(kas.cash)}" placeholder="0"></label>
         <div class="f"><span>Transfer BCA</span><b class="tnum kas-bca" id="bca">${rp(D.bersih - (kas.cash || 0) - (kas.bri || 0))}</b></div>
@@ -669,7 +768,15 @@ function viewLaporan() {
         <div class="row total"><span>Laba bersih</span><b class="tnum ${D.laba < 0 ? 'neg' : ''}">${rp(D.laba)}</b></div>
         ${bagi.map(([n, v, p]) => `<div class="row"><span>${n} (${p}%)</span><span class="tnum">${rp(v)}</span></div>`).join('')}
       </div><div class="catatan no-print">Team & ruko diubah di tab Atur.</div></div>
-  </div>`;
+  </div>
+  ` : ''}
+  ${lt('closing') ? `
+  <div class="card closing-aksi"><div><h2>Closing akhir bulan</h2><span class="sub">Hasil akhir ${BULAN[D.mo - 1]} ${D.y} untuk owner & investor</span></div>
+    <div class="closing-btn"><button class="btn" data-act="closingXlsx">Spreadsheet (.xlsx)</button><button class="btn" data-act="closingPdf">PDF</button><button class="btn btn-utama" data-act="closingWa">Teks WA</button></div></div>
+  <div class="card closing-isi no-print"><h2>Isi closing ${BULAN[D.mo - 1]}</h2>
+    <ul class="daftar-isi"><li>Ringkasan pemasukan, pengeluaran, total bersih, gaji tim, ruko & laba bersih</li><li>Pembagian laba Investor / Kas / Studio</li><li>Grafik & rincian pemasukan/pengeluaran per jenis</li><li>Catatan DP yang belum lunas (tidak dihitung pemasukan)</li></ul>
+    ${PL.berjalan ? `<div class="peringatan" style="margin-top:10px">Bulan ${BULAN[D.mo - 1]} masih berjalan — closing sebaiknya dibuat setelah tanggal ${nHari}.</div>` : ''}</div>
+  ` : ''}`;
 }
 
 function gambarGrafik() {
@@ -735,6 +842,9 @@ function viewAtur() {
       <div class="scroll-x"><table class="tabel tabel-in tabel-cetak"><thead><tr><th>Ukuran</th>${KOLOM_CETAK.map(k => `<th>${k}</th>`).join('')}</tr></thead><tbody>${cetakRows}</tbody></table></div>
       <div class="catatan">3R–18R pakai bahan bingkai 3 cm, 20R–36R pakai 4,5 cm / 6 cm. Kosong = tidak tersedia.</div></div>
     ${typeof kartuDatabase === 'function' ? kartuDatabase() : ''}
+    <div class="card lebar"><h2>Tempat sampah <small class="bantu">· disimpan 30 hari</small></h2>
+      ${(S.sampah || []).length ? [...S.sampah].sort((x, y) => y.waktu.localeCompare(x.waktu)).map(x => `<div class="baris"><div class="isi"><b>${esc({ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran' }[x.koleksi])} · ${esc(x.data.customer || x.data.nama || '—')}</b><span>dihapus ${x.oleh ? esc(x.oleh) + ' · ' : ''}${jamTgl(x.waktu)}${x.ikut?.length ? ' · + ' + x.ikut.length + ' pengeluaran otomatis' : ''}</span></div><button class="btn btn-kecil" data-act="pulihkan" data-id="${x.id}">Pulihkan</button></div>`).join('')
+        : '<div class="kosong" style="padding:14px">Kosong. Data yang dihapus muncul di sini dan bisa dipulihkan.</div>'}</div>
     <div class="card lebar"><h2>Data</h2>
       <div class="baris"><div class="isi"><b>Backup data</b><span>Simpan semua jadwal, pemasukan, pengeluaran & pengaturan ke file JSON.</span></div><button class="btn btn-kecil" data-act="backup">Unduh backup</button></div>
       <div class="baris"><div class="isi"><b>Pulihkan dari backup</b><span>Menimpa data di perangkat ini dengan isi file backup.</span></div><button class="btn btn-kecil" data-act="restore">Pilih file</button></div>
@@ -771,7 +881,7 @@ const pilihBulan = nilai => pilihan('bulan', BULAN_UP, nilai);
 // Jadwal (Laporan Studio)
 function jadwalBaru() {
   const jenis = daftarJenis()[0] || '';
-  F = { id: null, fotografer: '', tglBooking: hariIni, tanggal: hariPilih !== hariIni ? hariPilih : '', jam: '', addonManual: [], jenis, paket: paketDari(jenis)[0]?.paket || '', customer: '', kontak: '', ig: '', addon: {}, status: STATUS_JADWAL[0] };
+  F = { id: null, fotografer: '', tglBooking: hariIni, tanggal: hariPilih !== hariIni ? hariPilih : '', jam: '', addonManual: [], jenis, paket: paketDari(jenis)[0]?.paket || '', customer: '', kontak: '', ig: '', addon: {}, status: STATUS_JADWAL[0], bayarAwal: 'dp', dpAwal: 0, dpAwalManual: false };
   formJenis = 'jadwal'; bukaModal(formJadwal(), 'lebar');
 }
 // Bagian bernomor: yang wajib & paling sering diisi di atas, detail di bawah.
@@ -798,17 +908,33 @@ function barisAddon(d) {
       <button type="button" class="x" data-act="hapusAddonManual" data-i="${i}" aria-label="Hapus add-on">×</button></div>`).join('');
   return tetap + manual;
 }
+// Customer lama: nama + no HP + IG dari booking sebelumnya (paling baru di atas)
+function customerLama(q) {
+  q = q.trim().toLowerCase(); if (q.length < 2) return [];
+  const peta = new Map();
+  [...S.jadwal].sort((a, b) => (b.tglBooking || b.tanggal).localeCompare(a.tglBooking || a.tanggal)).forEach(j => { const k = j.customer.trim().toLowerCase(); if (!peta.has(k)) peta.set(k, { nama: j.customer.trim(), kontak: j.kontak || '', ig: j.ig || '', n: 0 }); peta.get(k).n++; });
+  S.masuk.forEach(m => { const k = (m.customer || '').trim().toLowerCase(); if (k && !peta.has(k)) peta.set(k, { nama: m.customer.trim(), kontak: '', ig: '', n: 1 }); });
+  return [...peta.values()].filter(c => c.nama.toLowerCase().includes(q) && c.nama.toLowerCase() !== q).sort((a, b) => b.nama.toLowerCase().startsWith(q) - a.nama.toLowerCase().startsWith(q)).slice(0, 5);
+}
+let SARAN = [];
+function tampilSaran(q) {
+  const box = $('#saranCust'); if (!box) return;
+  SARAN = customerLama(q);
+  box.innerHTML = SARAN.map((c, i) => `<button type="button" class="saran-item" data-act="pilihCust" data-i="${i}"><b>${esc(c.nama)}</b><small>${[c.kontak, c.ig, c.n > 1 ? c.n + '× booking' : 'pernah booking'].filter(Boolean).map(esc).join(' · ')}</small></button>`).join('');
+  box.hidden = !SARAN.length;
+}
 function formJadwal() {
   const d = F;
   d.addon ||= {};
   const bentrok = d.jam ? S.jadwal.filter(j => j.id !== d.id && j.tanggal === d.tanggal && j.jam === d.jam) : [];
   const iStatus = STATUS_JADWAL.indexOf(d.status);
   const addonRows = barisAddon(d), manualRows = '';
-  return `${kepala(d.id ? 'Ubah jadwal' : 'Jadwal baru')}
+  return `${kepala(d.id ? 'Ubah booking' : 'Booking baru')}
   <div class="sheet-body form-dua">
     <div class="form-kiri">
       ${bagian(1, 'Pemesan', 'Nama yang booking dan kontaknya', `
         ${fld('Nama yang booking', `<input class="besar" data-f="customer" value="${esc(d.customer)}" autocomplete="off" placeholder="mis. Rani Putri">`, { wajib: true })}
+        <div id="saranCust" class="saran" hidden></div>
         <div class="grid2">
           ${fld('No. HP', `<input data-f="kontak" value="${esc(d.kontak)}" inputmode="tel" autocomplete="off" placeholder="08…">`, { wajib: true })}
           ${fld('Instagram', `<input data-f="ig" value="${esc(d.ig)}" autocomplete="off" placeholder="@username">`, { bantu: 'media sosial' })}
@@ -827,23 +953,29 @@ function formJadwal() {
         <div class="hari-besar" id="hariJadwal">${d.tanggal ? 'Fotoshoot: ' + esc(tglPanjang(d.tanggal)) : 'Pilih tanggal fotoshoot'}</div>
         ${bentrok.length ? `<div class="peringatan">Jam sama dengan: ${bentrok.map(j => esc(j.customer) + (j.fotografer ? ' (' + esc(j.fotografer) + ')' : '')).join(', ')}</div>` : ''}
         ${fld('Fotografer', pilihan('fotografer', S.fotografer, d.fotografer, '— belum ditentukan'), { bantu: 'opsional, bisa diisi nanti' })}`)}
-      ${bagian(5, 'Pembayaran', 'DP atau lunas — tercatat di Pemasukan', (() => {
-        const mj = d.id ? pemasukanJadwal(d) : null, tot = totalBooking(d), dp30 = naik500(tot * (Number(S.setelan.dpPersen) || 0) / 100);
-        if (!mj) return `<div class="bayar-aksi">
-            <button type="button" class="btn btn-dp" data-act="dpDariJadwal"><b>DP ${S.setelan.dpPersen}%</b><span class="tnum" id="nomDp">${rp(dp30)}</span></button>
-            <button type="button" class="btn" data-act="lunasDariJadwal"><b>Lunas</b><span class="tnum" id="nomLunas">${rp(tot)}</span></button></div>
-          <small class="bantu">${d.id ? '' : 'Jadwal disimpan dulu, lalu form pemasukan terbuka. '}DP tidak dihitung pemasukan bulan ini sampai lunas.</small>`;
+      ${bagian(5, 'Pembayaran ' + tanya('dp'), 'Langsung tercatat saat booking disimpan', (() => {
+        const mj = d.id ? pemasukanJadwal(d) : null;
+        if (!mj) {
+          const pilih = d.bayarAwal || 'belum';
+          return `${segPenuh('bayarAwal', [['belum', 'Belum bayar'], ['dp', 'DP'], ['lunas', 'Lunas']], pilih)}
+          ${pilih === 'dp' ? `<div class="grid2">
+            ${fld('Nominal DP', uang('dpAwal', dpAwalNilai()), { wajib: true, bantu: d.dpAwalManual ? 'diubah manual · <a href="#" data-act="dpAwalAuto">kembali ' + S.setelan.dpPersen + '%</a>' : 'otomatis ' + S.setelan.dpPersen + '% dari total, bisa diubah' })}
+            <div class="f"><span>Sisa tagihan</span><b class="kas-bca tnum" id="sisaAwal">${rp(Math.max(0, totalBooking(d) - dpAwalNilai()))}</b></div></div>
+            <small class="bantu">DP masuk Catatan DP (belum dihitung pemasukan) sampai dilunasi.</small>`
+          : pilih === 'lunas' ? `<div class="bayar-status ok"><div><b id="nomLunas">${rp(totalBooking(d))}</b><span>dibayar lunas hari ini — langsung masuk pemasukan ${BULAN[new Date().getMonth()]}</span></div></div>`
+          : '<small class="bantu">Pembayaran bisa dicatat nanti dari kartu jadwal (+ DP / Lunas).</small>'}`;
+        }
         if (mj.bayar === 'dp') return `<div class="bayar-status dp"><div><b>DP ${rp(mj.dp)}</b><span>tgl ${esc(tglPendek(mj.tglDp || mj.tanggal))} · sisa ${rp(sisaTagihan(mj))}</span></div>
             <button type="button" class="btn btn-utama btn-kecil" data-act="bukaLunas" data-id="${mj.id}">Lunas</button><button type="button" class="btn btn-kecil" data-act="editMasuk" data-id="${mj.id}">Lihat</button></div>`;
         return `<div class="bayar-status ok"><div><b>Lunas ${rp(jumlahMasuk(mj))}</b><span>tgl ${esc(tglPendek(mj.tanggal))}${mj.dp ? ' · pernah DP ' + rp(mj.dp) : ''}</span></div><button type="button" class="btn btn-kecil" data-act="editMasuk" data-id="${mj.id}">Lihat</button></div>`;
       })())}
       ${d.id ? bagian(6, 'Status', 'Progres pengerjaan', `<div class="langkah">${STATUS_JADWAL.map((s, i) => `<button type="button" class="${i < iStatus ? 'lewat' : i === iStatus ? 'on' : ''}" data-act="setF" data-k="status" data-v="${esc(s)}"><i>${i < iStatus ? '✓' : i + 1}</i>${esc(s)}</button>`).join('')}</div>`) : ''}
     </div>
-    <aside class="form-kanan"><div class="kanan-sticky">${ringkasJadwal()}</div></aside>
+    <aside class="form-kanan"><div class="kanan-sticky">${ringkasJadwal()}</div>${kirimCustomer(d)}</aside>
   </div>
   <div class="sheet-foot">
     ${d.id ? '<button class="btn btn-hapus btn-kecil" data-act="hapusJadwal">Hapus</button>' : ''}
-    ${d.kontak ? '<button class="btn btn-kecil" data-act="waJadwal">Konfirmasi WA</button>' : ''}
+    ${d.id && jejak(d) ? `<small class="jejak">${jejak(d)}</small>` : ''}
     <div class="foot-total"><span>Total booking</span><b class="tnum" id="footBooking">${rp(totalBooking(d))}</b></div>
     <span class="spacer"></span>
     <button class="btn" data-act="tutup">Batal</button>
@@ -864,13 +996,29 @@ function ringkasJadwal() {
     ${d.customer ? `<small class="bantu" style="display:block;margin-top:8px">${esc(d.customer)}${d.kontak ? ' · ' + esc(d.kontak) : ''}${d.ig ? ' · ' + esc(d.ig) : ''}</small>` : ''}
   </div>`;
 }
+const dpAwalNilai = () => F.dpAwalManual ? Number(F.dpAwal) || 0 : naik500(totalBooking(F) * (Number(S.setelan.dpPersen) || 0) / 100);
+// Booking = jadwal + pembayaran awal: DP/lunas langsung jadi catatan pemasukan yang terhubung ke jadwal
+function buatPemasukanJadwal(j, bayar, dp) {
+  const m = { id: uid(), tanggal: hariIni, waktu: jamSekarang(), bulan: bulanDari(hariIni), customer: j.customer, jenisJual: /pas photo/i.test(j.jenis) ? 'PAS PHOTO' : 'PAKET', jenis: j.jenis, paket: j.paket, qty: 1,
+    nilai: cariPaket(j.jenis, j.paket)?.harga || 0, item: '', tambahan: 'TIDAK', ket: '', nominal: 0, tipeTambah: 'diskon', fotografer: j.fotografer || '', feeRp: 0, feeManual: false, editor: '', feeEdit: 0, cetak: [], jadwalId: j.id, bayar, dp: 0, dpManual: false };
+  const add = addonTotal(j); if (add) Object.assign(m, { tambahan: 'ADA', tipeTambah: 'tambah', nominal: add, ket: addonKet(j) });
+  m.feeRp = feeOtomatis(m);
+  if (bayar === 'dp') Object.assign(m, { dp: Math.min(dp, jumlahMasuk(m)), dpManual: true, tglDp: m.tanggal });
+  cap(m, true); S.masuk.push(m);
+  if (bayar !== 'dp') sinkronKeluar(m);
+  return m;
+}
 function simpanJadwalData() {
   if (!F.customer.trim()) return toast('Isi nama yang booking dulu'), null;
   if (!F.kontak.trim()) return toast('Isi no. HP dulu'), null;
   if (!F.jenis || !F.paket) return toast('Pilih jenis paket dan paket dulu'), null;
   if (!F.tanggal) return toast('Isi tanggal fotoshoot'), null;
+  const bayar = F.bayarAwal, dp = dpAwalNilai();
+  if (bayar === 'dp' && !(dp > 0) && !pemasukanJadwal(F)) return toast('Isi nominal DP'), null;
   const j = { ...F, customer: F.customer.trim(), kontak: F.kontak.trim(), ig: F.ig.trim() };
-  if (!j.id) { j.id = uid(); S.jadwal.push(j); } else S.jadwal[S.jadwal.findIndex(x => x.id === j.id)] = j;
+  delete j.bayarAwal; delete j.dpAwal; delete j.dpAwalManual;
+  if (!j.id) { j.id = uid(); cap(j, true); S.jadwal.push(j); } else { cap(j); S.jadwal[S.jadwal.findIndex(x => x.id === j.id)] = j; }
+  if (!pemasukanJadwal(j) && (bayar === 'dp' || bayar === 'lunas')) j._bayar = buatPemasukanJadwal(j, bayar, dp);
   simpan(); hariPilih = j.tanggal; bulanKal = keTgl(j.tanggal.slice(0, 8) + '01');
   return j;
 }
@@ -878,19 +1026,84 @@ function simpanJadwalData() {
 function segarkanJadwal() {
   const r = document.querySelector('.form-kanan .kanan-sticky'); if (r) r.innerHTML = ringkasJadwal();
   const tot = totalBooking(F), set = (id, v) => { const e = $(id); if (e) e.textContent = rp(v); };
-  set('#footBooking', tot); set('#nomLunas', tot); set('#nomDp', naik500(tot * (Number(S.setelan.dpPersen) || 0) / 100));
+  set('#footBooking', tot); set('#nomLunas', tot);
+  const di = document.querySelector('[data-f=dpAwal]'); if (di && !F.dpAwalManual && document.activeElement !== di) di.value = titik(dpAwalNilai());
+  set('#sisaAwal', Math.max(0, tot - dpAwalNilai()));
 }
-function simpanJadwal() { if (simpanJadwalData()) { tutupModal(); render(); toast('Jadwal tersimpan'); } }
+function simpanJadwal() {
+  const j = simpanJadwalData(); if (!j) return;
+  const m = j._bayar; delete j._bayar; tutupModal(); render();
+  const pesan = m ? (m.bayar === 'dp' ? `Booking tersimpan · DP ${rp(m.dp)}` : `Booking tersimpan · lunas ${rp(jumlahMasuk(m))}`) : 'Booking tersimpan';
+  toast(pesan, m ? { label: 'Nota', fn: () => bukaNota(m.id) } : null);
+}
 // Dari jadwal: simpan dulu, lalu buka form pemasukan (DP 30% atau lunas) yang sudah terisi paket + add-on
 function bayarDariJadwal(bayar) { const j = simpanJadwalData(); if (!j) return; tutupModal(); render(); masukBaru(j, bayar); }
 const pemasukanJadwal = j => S.masuk.find(m => m.jadwalId === j.id);
-function waJadwal() {
-  let no = String(F.kontak).replace(/\D/g, ''); if (no.startsWith('0')) no = '62' + no.slice(1);
-  const h = cariPaket(F.jenis, F.paket)?.harga;
-  const add = [...addonRinci(F).map(a => `➕ ${a.qty} ${a.satuan} × ${rp(a.harga)}`), ...addonManual(F).map(a => `➕ ${a.nama.trim() || 'add-on'} ${rp(a.harga)}`)].join('\n');
-  const teks = `Halo ${F.customer.trim()}, jadwal foto di ${S.setelan.nama} sudah kami catat:\n\n📅 ${tglPanjang(F.tanggal)}${F.jam ? '\n⏰ ' + F.jam : ''}\n📦 ${F.jenis} · ${F.paket}${h ? ' (' + rp(h) + ')' : ''}${add ? '\n' + add : ''}\n💰 Total ${rp(totalBooking(F))}\n\nTerima kasih 🙏`;
-  window.open('https://wa.me/' + no + '?text=' + encodeURIComponent(teks), '_blank');
+// ---------- WhatsApp & nota ke customer ----------
+const noWa = h => { let no = String(h || '').replace(/\D/g, ''); if (no.startsWith('0')) no = '62' + no.slice(1); return no; };
+const jadwalDari = m => S.jadwal.find(j => j.id === m.jadwalId) || S.jadwal.filter(j => j.customer.trim().toLowerCase() === (m.customer || '').trim().toLowerCase()).sort((a, b) => b.tanggal.localeCompare(a.tanggal))[0];
+function bukaWa(no, teks) { window.open('https://wa.me/' + noWa(no) + '?text=' + encodeURIComponent(teks), '_blank'); }
+function teksWa(jenis, j, m) {
+  const st = S.setelan.nama, salam = `Halo ${j.customer.trim()} 👋`;
+  const detail = `📅 ${tglPanjang(j.tanggal)}${j.jam ? '\n⏰ ' + j.jam : ''}\n📦 ${j.jenis} · ${j.paket}${addonTeks(j) ? '\n➕ ' + addonTeks(j) : ''}`;
+  if (jenis === 'konfirmasi') return `${salam}\nBooking foto di ${st} sudah kami catat:\n\n${detail}\n💰 Total ${rp(m ? jumlahMasuk(m) : totalBooking(j))}${m?.bayar === 'dp' ? `\n✅ DP diterima ${rp(m.dp)}\n🧾 Sisa ${rp(sisaTagihan(m))} (dibayar saat foto)` : m ? '\n✅ Sudah lunas' : ''}\n\nTerima kasih 🙏`;
+  if (jenis === 'ingat') return `${salam}\nMengingatkan jadwal foto kamu di ${st}:\n\n${detail}\n\nMohon datang 10–15 menit lebih awal ya. Sampai ketemu! 📸`;
+  if (jenis === 'tagih') return `${salam}\nUntuk booking foto ${tglPanjang(j.tanggal)} (${j.jenis} · ${j.paket}):\n\nTotal ${rp(jumlahMasuk(m))}\nDP sudah diterima ${rp(m.dp)}\n*Sisa pelunasan ${rp(sisaTagihan(m))}*\n\nPelunasan bisa saat sesi foto ya. Terima kasih 🙏`;
+  return '';
 }
+// tombol kirim di samping ringkasan booking
+function kirimCustomer(j) {
+  if (!j.id) return '';
+  const m = pemasukanJadwal(j);
+  return `<div class="kirim-cust"><div class="ringkas-judul">Kirim ke customer</div>
+    ${j.kontak ? `<button type="button" class="btn btn-kecil" data-act="waCust" data-v="konfirmasi">💬 Konfirmasi booking</button>
+    <button type="button" class="btn btn-kecil" data-act="waCust" data-v="ingat">⏰ Pengingat jadwal</button>
+    ${m?.bayar === 'dp' ? '<button type="button" class="btn btn-kecil" data-act="waCust" data-v="tagih">🧾 Tagih sisa pelunasan</button>' : ''}` : '<small class="bantu">Isi No. HP untuk kirim WhatsApp.</small>'}
+    ${m ? `<button type="button" class="btn btn-kecil" data-act="nota" data-id="${m.id}">🧾 Nota ${m.bayar === 'dp' ? 'DP' : 'lunas'}</button>` : ''}</div>`;
+}
+// Nota: gambar PNG bertema studio — dibagikan ke WhatsApp lewat menu bagikan HP, atau diunduh
+function gambarNota(m) {
+  const j = jadwalDari(m), W = 1080, P = 72, baris = [];
+  baris.push(['Customer', m.customer || '-']);
+  if (j) baris.push(['Jadwal foto', tglPanjang(j.tanggal) + (j.jam ? ' · ' + j.jam : '')]);
+  baris.push([namaPaket(m) + (Number(m.qty) > 1 ? ' × ' + m.qty : ''), rp((Number(m.nilai) || 0) * (Number(m.qty) || 1))]);
+  if (nominalOf(m)) baris.push([(m.ket || TIPE_TAMBAH[m.tipeTambah] || 'Tambahan').slice(0, 34), (nominalOf(m) > 0 ? '+ ' : '− ') + rp(Math.abs(nominalOf(m) * (Number(m.qty) || 1)))]);
+  baris.push(['TOTAL', rp(jumlahMasuk(m)), 'tebal']);
+  if (Number(m.dp)) baris.push([`DP dibayar · ${tglPendek(m.tglDp || m.tanggal)}`, '− ' + rp(m.dp)]);
+  if (m.bayar !== 'dp' && Number(m.dp)) baris.push([`Pelunasan · ${tglPendek(m.tglLunas || m.tanggal)}`, rp(jumlahMasuk(m) - m.dp)]);
+  if (m.bayar === 'dp') baris.push(['SISA TAGIHAN', rp(sisaTagihan(m)), 'tebal']);
+  const H = 330 + baris.length * 78 + 230, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), font = (w, px) => `${w} ${px}px ${S.setelan.font || 'Nunito'}, system-ui, sans-serif`;
+  x.fillStyle = '#F4FBFB'; x.fillRect(0, 0, W, H);
+  const g = x.createLinearGradient(0, 0, W, 260); g.addColorStop(0, '#12A9A7'); g.addColorStop(1, '#0B8C8A'); x.fillStyle = g; x.fillRect(0, 0, W, 250);
+  x.fillStyle = '#fff'; x.font = font(800, 58); x.fillText((S.setelan.nama || 'Studio').toLowerCase().replace(/\s+(\S+)$/, '.$1').replace(/\s+/g, ''), P, 110);
+  x.font = font(700, 30); x.globalAlpha = .9; x.fillText('NOTA PEMBAYARAN', P, 165); x.globalAlpha = 1;
+  x.textAlign = 'right'; x.font = font(600, 26); x.fillText('No. ' + m.id.slice(-6).toUpperCase(), W - P, 110); x.fillText(tglPanjang(m.bayar === 'dp' ? (m.tglDp || m.tanggal) : m.tanggal), W - P, 150); x.textAlign = 'left';
+  // cap status
+  const lunas = m.bayar !== 'dp', cap = lunas ? 'LUNAS' : 'DP'; x.font = font(800, 30); const cw = x.measureText(cap).width + 48;
+  x.fillStyle = lunas ? '#DFF8F7' : '#FFF1D6'; x.beginPath(); x.roundRect(W - P - cw, 185, cw, 48, 24); x.fill(); x.fillStyle = lunas ? '#0B6B6A' : '#7A4A06'; x.textAlign = 'center'; x.fillText(cap, W - P - cw / 2, 220); x.textAlign = 'left';
+  let y = 330;
+  baris.forEach(([k, v, gaya]) => {
+    if (gaya) { x.fillStyle = '#E7FDFD'; x.fillRect(P - 20, y - 52, W - 2 * P + 40, 72); }
+    x.fillStyle = gaya ? '#102A2C' : '#456264'; x.font = font(gaya ? 800 : 600, 32); x.fillText(k, P, y);
+    x.textAlign = 'right'; x.fillStyle = '#102A2C'; x.font = font(gaya ? 800 : 700, gaya ? 36 : 32); x.fillText(v, W - P, y); x.textAlign = 'left';
+    if (!gaya) { x.fillStyle = '#E3F1F1'; x.fillRect(P, y + 26, W - 2 * P, 2); }
+    y += 78;
+  });
+  x.fillStyle = '#5E7779'; x.font = font(600, 28); x.textAlign = 'center';
+  x.fillText(lunas ? 'Terima kasih sudah foto di ' + (S.setelan.nama || 'studio kami') + ' 🙏' : 'Sisa tagihan dibayar saat sesi foto. Terima kasih 🙏', W / 2, H - 120);
+  x.font = font(500, 22); x.fillText('Nota ini dibuat otomatis oleh aplikasi ' + (S.setelan.nama || 'studio'), W / 2, H - 76);
+  return c;
+}
+function bukaNota(id) {
+  const m = S.masuk.find(x => x.id === id); if (!m) return;
+  const c = gambarNota(m), j = jadwalDari(m);
+  bukaModal(`${kepala('Nota ' + esc(m.customer))}<div class="sheet-body nota-body"><img class="nota-img" src="${c.toDataURL('image/png')}" alt="Nota ${esc(m.customer)}"></div>
+    <div class="sheet-foot"><span class="spacer"></span><button class="btn" data-act="unduhNota" data-id="${m.id}">Unduh</button>
+    ${j?.kontak ? `<button class="btn" data-act="waNota" data-id="${m.id}">Teks WA</button>` : ''}<button class="btn btn-utama" data-act="bagikanNota" data-id="${m.id}">Bagikan ke WA</button></div>`, 'kecil');
+}
+function blobNota(m) { return new Promise(r => gambarNota(m).toBlob(r, 'image/png')); }
+const namaFileNota = m => `nota-${(m.customer || 'customer').replace(/[^\w]+/g, '-').toLowerCase()}.png`;
 
 // Pemasukan
 function masukBaru(dari, bayar = 'lunas') {
@@ -952,6 +1165,7 @@ function formMasuk() {
     <div class="form-kiri">
       ${bagian(1, 'Customer', 'Siapa dan kapan bayar', `
         ${fld('Nama customer', `<input class="besar" data-f="customer" value="${esc(d.customer)}" autocomplete="off" placeholder="mis. Rani Putri">`, { wajib: true })}
+        <div id="saranCust" class="saran" hidden></div>
         <div class="grid3">
           ${fld('Tanggal', `<input type="date" data-f="tanggal" value="${esc(d.tanggal)}">`, { wajib: true })}
           ${fld('Waktu', `<input type="time" data-f="waktu" value="${esc(d.waktu)}">`)}
@@ -983,7 +1197,7 @@ function formMasuk() {
         </div>
         <div class="catatan" style="margin:0">DP masuk <b>Catatan DP</b> dan <b>tidak dihitung</b> pemasukan bulan ini. Saat lunas, totalnya masuk pemasukan bulan pelunasan.</div>`
         : d.tglLunas && d.dp ? `<small class="bantu">Pernah DP ${rp(d.dp)} tgl ${esc(tglPendek(d.tglDp))}, lunas ${esc(tglPendek(d.tglLunas))}.</small>` : ''}`)}
-      ${bagian(5, 'Pembagian', d.bayar === 'dp' ? 'Dicatat ke Pengeluaran saat lunas' : 'Otomatis tercatat di Pengeluaran', `
+      ${bagian(5, 'Pembagian ' + tanya('fee'), d.bayar === 'dp' ? 'Dicatat ke Pengeluaran saat lunas' : 'Otomatis tercatat di Pengeluaran', `
         ${cetakMode ? '' : `<div class="grid2">
           ${fld('Fotografer', pilihan('fotografer', S.fotografer, d.fotografer, '— tidak ada'))}
           ${d.fotografer ? fld('Fee fotografer', uang('feeRp', d.feeRp), { bantu: bantuFee }) : '<div></div>'}
@@ -998,6 +1212,8 @@ function formMasuk() {
   </div>
   <div class="sheet-foot">
     ${d.id ? '<button class="btn btn-hapus btn-kecil" data-act="hapusMasuk">Hapus</button>' : ''}
+    ${d.id ? `<button class="btn btn-kecil" data-act="nota" data-id="${d.id}">Nota</button>` : ''}
+    ${d.id && jejak(d) ? `<small class="jejak">${jejak(d)}</small>` : ''}
     <div class="foot-total" id="footTotal">${totalBawah()}</div>
     <span class="spacer"></span>
     <button class="btn" data-act="tutup">Batal</button>
@@ -1018,7 +1234,7 @@ function simpanMasuk() {
     if (!(Number(m.dp) > 0)) return toast('Isi nominal DP dulu');
     m.tglDp = m.tanggal;
   } else if (lama?.bayar === 'dp') m.tglLunas = m.tanggal;   // dilunasi lewat form ubah
-  if (!m.id) { m.id = uid(); S.masuk.push(m); } else S.masuk[S.masuk.findIndex(x => x.id === m.id)] = m;
+  if (!m.id) { m.id = uid(); cap(m, true); S.masuk.push(m); } else { cap(m); S.masuk[S.masuk.findIndex(x => x.id === m.id)] = m; }
   if (m.bayar === 'dp') S.keluar = S.keluar.filter(k => k.dari !== m.id); else sinkronKeluar(m);
   if (m.jadwalId && m.bayar !== 'dp') { const j = S.jadwal.find(x => x.id === m.jadwalId); if (j && j.status === 'Belum Foto') j.status = 'Sudah Foto Belum Edit'; }
   simpan(); tutupModal(); render(); toast(m.bayar === 'dp' ? 'DP tersimpan di Catatan DP' : 'Pemasukan tersimpan');
@@ -1034,7 +1250,7 @@ function sinkronKeluar(m) {
   if (m.fotografer && m.feeRp) baru.push({ kunci: 'fee', jenis: 'fee', fotografer: m.fotografer, nama: `Fee ${m.fotografer} ${label}`, nominal: m.feeRp, jumlah: 1 });
   if (m.editor && m.feeEdit) baru.push({ kunci: 'edit', jenis: 'edit', fotografer: m.editor, nama: `Fee edit ${m.editor} ${m.customer}`, nominal: m.feeEdit, jumlah: 1 });
   (m.cetak || []).forEach((c, i) => baru.push({ kunci: 'cetak' + i, jenis: 'cetak', fotografer: '', nama: `Cetak ${c.ukuran} ${KOLOM_CETAK[c.kolom]} ${m.customer}`.replace(' Cetak ', ' '), nominal: c.harga, jumlah: c.qty }));
-  baru.forEach(k => S.keluar.push({ id: uid(), tanggal: m.tanggal, bulan: m.bulan, status: statusLama[k.kunci] || 'BELUM', dari: m.id, ...k }));
+  baru.forEach(k => S.keluar.push(cap({ id: uid(), tanggal: m.tanggal, bulan: m.bulan, status: statusLama[k.kunci] || 'BELUM', dari: m.id, ...k }, true)));
 }
 
 // Pengeluaran
@@ -1073,6 +1289,7 @@ function formKeluar() {
   <div class="sheet-foot">
     ${d.id && !kunci ? '<button class="btn btn-hapus btn-kecil" data-act="hapusKeluar">Hapus</button>' : ''}
     ${kunci ? '<button class="btn btn-kecil" data-act="bukaAsal">Buka pemasukannya</button>' : ''}
+    ${d.id && jejak(d) ? `<small class="jejak">${jejak(d)}</small>` : ''}
     <span class="spacer"></span>
     <button class="btn" data-act="tutup">Batal</button>
     <button class="btn btn-utama" data-act="simpanKeluar">Simpan</button>
@@ -1085,14 +1302,14 @@ function simpanKeluar() {
   if (!nama) return toast('Isi nama pengeluaran dulu');
   const k = { ...F, nama, jumlah: Number(F.jumlah) || 1 };
   delete k.cUkuran;
-  if (!k.id) { k.id = uid(); S.keluar.push(k); } else S.keluar[S.keluar.findIndex(x => x.id === k.id)] = k;
+  if (!k.id) { k.id = uid(); cap(k, true); S.keluar.push(k); } else { cap(k); S.keluar[S.keluar.findIndex(x => x.id === k.id)] = k; }
   simpan(); tutupModal(); render(); toast('Pengeluaran tersimpan');
 }
 
 // ---------- ekspor ----------
 function unduh(nama, isi, tipe) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([isi], { type: tipe }));
+  a.href = URL.createObjectURL(isi instanceof Blob ? isi : new Blob([isi], { type: tipe }));
   a.download = nama; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
@@ -1114,15 +1331,21 @@ const AKSI = {
   tab: el => { tab = el.dataset.tab; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
   buka: el => { tab = el.dataset.v; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
   bukaKas: el => { filterKas = el.dataset.v || 'semua'; if (filterKas === 'dp') periode = hariIni.slice(0, 7); tab = 'kas'; animasi = true; render(); window.scrollTo(0, 0); },
+  bukaKasDp: () => AKSI.bukaKas({ dataset: { v: 'dp' } }),
+  lewatBelumLunas: () => daftarJadwalModal('Sudah foto, belum lunas', S.jadwal.filter(j => j.tanggal < hariIni && (pemasukanJadwal(j)?.bayar ?? 'belum') !== 'lunas').sort((a, b) => b.tanggal.localeCompare(a.tanggal))),
+  bukaBelumSelesai: () => daftarJadwalModal('Hasil foto belum selesai', S.jadwal.filter(j => j.tanggal < hariIni && j.status !== 'Selesai').sort((a, b) => a.tanggal.localeCompare(b.tanggal))),
+  bukaCetakBelum: () => { filterKeluar = 'BELUM'; periode = 'semua'; tab = 'keluar'; animasi = true; render(); window.scrollTo(0, 0); },
   bukaFee: () => { filterKeluar = 'BELUM'; periode = 'semua'; tab = 'keluar'; animasi = true; render(); window.scrollTo(0, 0); },
   filterKas: el => { filterKas = el.dataset.v; render(); },
   hapusCari: () => { cari = ''; render(); },
   menuTambah,
   pilihUkuran: el => { const u = el.dataset.v; F.cUkuran = F.cUkuran.includes(u) ? F.cUkuran.filter(x => x !== u) : UKURAN_CETAK.filter(x => x === u || F.cUkuran.includes(x)); gambarUlangForm(); },
   gantiFont: el => { S.setelan.font = el.dataset.v; simpan(); render(); toast('Font: ' + el.dataset.v); },
-  tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), lunas: daftarPelunasan, keluar: keluarBaru })[v](); },
+  tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), lunas: daftarPelunasan, keluar: keluarBaru, cari: cariCustomer })[v](); },
   tambah: () => ({ jadwal: jadwalBaru, masuk: () => masukBaru(), keluar: keluarBaru }[tab] || (() => {}))(),
   pilihHari: el => { hariPilih = el.dataset.tgl; render(); },
+  pilihCust: el => { const c = SARAN[el.dataset.i]; if (!c) return; F.customer = c.nama; if (formJenis === 'jadwal') { if (c.kontak) F.kontak = c.kontak; if (c.ig) F.ig = c.ig; } gambarUlangForm(); },
+  cariCust: cariCustomer,
   bulanKal: el => { bulanKal = new Date(bulanKal.getFullYear(), bulanKal.getMonth() + Number(el.dataset.d), 1); render(); },
   keHariIni: () => { hariPilih = hariIni; bulanKal = keTgl(hariIni.slice(0, 8) + '01'); render(); },
   geserPeriode: el => { const [y, m] = periode.split('-').map(Number); periode = iso(new Date(y, m - 1 + Number(el.dataset.d), 1)).slice(0, 7); render(); },
@@ -1145,13 +1368,24 @@ const AKSI = {
     gambarUlangForm();
   },
   dpAuto: () => { F.dpManual = false; hitungFee(); gambarUlangForm(); },
+  dpAwalAuto: () => { F.dpAwalManual = false; gambarUlangForm(); },
   bukaLunas: el => { const m = S.masuk.find(x => x.id === el.dataset.id); F = { id: m.id, tanggal: hariIni, bayarLunas: sisaTagihan(m), addon: {}, addonManual: [], bayarManual: false }; formJenis = 'lunas'; bukaModal(formLunas()); },
   simpanLunas,
   feeAuto: () => { F.feeManual = false; hitungFee(); gambarUlangForm(); },
   // jadwal
-  editJadwal: el => { F = JSON.parse(JSON.stringify(S.jadwal.find(j => j.id === el.dataset.id))); F.addon ||= {}; F.addonManual ||= []; F.ig ||= ''; formJenis = 'jadwal'; bukaModal(formJadwal(), 'lebar'); },
-  simpanJadwal, waJadwal,
-  hapusJadwal: () => { if (!confirm('Hapus jadwal ' + F.customer + '?')) return; S.jadwal = S.jadwal.filter(j => j.id !== F.id); simpan(); tutupModal(); render(); toast('Jadwal dihapus'); },
+  editJadwal: el => { tutupModal(); F = JSON.parse(JSON.stringify(S.jadwal.find(j => j.id === el.dataset.id))); F.addon ||= {}; F.addonManual ||= []; F.ig ||= ''; Object.assign(F, { bayarAwal: 'belum', dpAwal: 0, dpAwalManual: false }); formJenis = 'jadwal'; bukaModal(formJadwal(), 'lebar'); },
+  simpanJadwal,
+  waCust: el => { const m = F.id ? pemasukanJadwal(F) : null; bukaWa(F.kontak, teksWa(el.dataset.v, F, m)); },
+  nota: el => bukaNota(el.dataset.id),
+  unduhNota: async el => { const m = S.masuk.find(x => x.id === el.dataset.id); unduh(namaFileNota(m), await blobNota(m), 'image/png'); },
+  bagikanNota: async el => {
+    const m = S.masuk.find(x => x.id === el.dataset.id), file = new File([await blobNota(m)], namaFileNota(m), { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Nota ' + m.customer }); } catch (e) {} }
+    else { unduh(file.name, file, 'image/png'); toast('Nota diunduh — kirim gambarnya lewat WhatsApp'); }
+  },
+  waNota: el => { const m = S.masuk.find(x => x.id === el.dataset.id), j = jadwalDari(m); bukaWa(j.kontak, teksWa(m.bayar === 'dp' ? 'tagih' : 'konfirmasi', j, m)); },
+  tagihWa: el => { const m = S.masuk.find(x => x.id === el.dataset.id), j = jadwalDari(m); if (!j?.kontak) return toast('No. HP customer belum ada di jadwalnya'); bukaWa(j.kontak, teksWa('tagih', j, m)); },
+  hapusJadwal: () => buang('jadwal', F.id),
   dpDariJadwal: () => bayarDariJadwal('dp'),
   lunasDariJadwal: () => bayarDariJadwal('lunas'),
   dpKartu: el => { const j = S.jadwal.find(x => x.id === el.dataset.id); masukBaru(j, 'dp'); },
@@ -1159,18 +1393,16 @@ const AKSI = {
   // pemasukan
   editMasuk: el => { F = JSON.parse(JSON.stringify(S.masuk.find(m => m.id === el.dataset.id))); F.tanda = F.nominal < 0 ? '-' : '+'; F.feeManual = F.feeRp !== feeOtomatis(F); formJenis = 'masuk'; bukaModal(formMasuk(), 'lebar'); },
   simpanMasuk,
-  hapusMasuk: () => {
-    const n = S.keluar.filter(k => k.dari === F.id).length;
-    if (!confirm('Hapus pemasukan ' + F.customer + '?' + (n ? ` ${n} baris pengeluaran otomatis (fee/cetak) ikut terhapus.` : ''))) return;
-    S.keluar = S.keluar.filter(k => k.dari !== F.id); S.masuk = S.masuk.filter(m => m.id !== F.id); simpan(); tutupModal(); render(); toast('Pemasukan dihapus');
-  },
+  hapusMasuk: () => buang('masuk', F.id),
   tambahCetak: () => { const u = '12R'; const ki = 3; F.cetak.push({ ukuran: u, kolom: ki, qty: 1, harga: S.cetakHarga[u]?.[ki] || 0 }); gambarUlangForm(); },
   hapusCetak: el => { F.cetak.splice(Number(el.dataset.i), 1); gambarUlangForm(); },
   qty: el => { const c = F.cetak[el.dataset.i]; c.qty = Math.max(1, c.qty + Number(el.dataset.d)); gambarUlangForm(); },
   // pengeluaran
   editKeluar: el => { F = JSON.parse(JSON.stringify(S.keluar.find(k => k.id === el.dataset.id))); F.cUkuran = []; formJenis = 'keluar'; bukaModal(formKeluar()); },
   simpanKeluar,
-  hapusKeluar: () => { if (!confirm('Hapus pengeluaran "' + F.nama + '"?')) return; S.keluar = S.keluar.filter(k => k.id !== F.id); simpan(); tutupModal(); render(); toast('Pengeluaran dihapus'); },
+  hapusKeluar: () => buang('keluar', F.id),
+  pulihkan: el => pulihkan(el.dataset.id),
+  tanya: el => tampilTanya(el),
   bukaAsal: () => { const id = F.dari; tutupModal(); AKSI.editMasuk({ dataset: { id } }); },
   tukarStatus: el => { const k = S.keluar.find(x => x.id === el.dataset.id); k.status = k.status === 'SELESAI' ? 'BELUM' : 'SELESAI'; simpan(); render(); },
   lunasFee: el => {
@@ -1190,7 +1422,8 @@ const AKSI = {
   hapusAddon: el => { const a = S.addon[el.dataset.i]; if (!confirm('Hapus add-on ' + a.nama + '?')) return; S.addon.splice(Number(el.dataset.i), 1); simpan(); render(); },
   tambahTim: () => { (S.setelan.tim ||= []).push({ nama: '', posisi: '', gaji: 0 }); simpan(); render(); },
   hapusTim: el => { const t = S.setelan.tim[el.dataset.i]; if (!confirm('Hapus ' + (t.nama || 'anggota') + ' dari team?')) return; S.setelan.tim.splice(Number(el.dataset.i), 1); simpan(); render(); },
-  cetakLaporan: () => { document.querySelectorAll('#view details').forEach(d => d.open = true); window.print(); },
+  lapTab: el => { lapTab = el.dataset.v; ui('lapTab', lapTab); render(); },
+  cetakLaporan: () => { const lama = lapTab; lapTab = 'semua'; render(); document.querySelectorAll('#view details').forEach(d => d.open = true); setTimeout(() => { window.print(); lapTab = lama; render(); }, 300); },
   backup: () => unduh(`backup-studio-foto-${hariIni}.json`, JSON.stringify(S, null, 1), 'application/json'),
   restore: () => $('#fileRestore').click()
 };
@@ -1228,8 +1461,10 @@ document.addEventListener('input', e => {
   if (el.dataset.tim) { const t = S.setelan.tim[el.dataset.tim]; t[el.dataset.k] = el.dataset.k === 'gaji' ? nilaiField(el) : el.value; simpan(); return; }
   if (el.dataset.kas) { const o = S.posisiKas[periode] ||= { cash: 0, bri: 0 }; o[el.dataset.kas] = nilaiField(el); simpan(); const D = dataBulan(periode); $('#bca').textContent = rp(D.bersih - (o.cash || 0) - (o.bri || 0)); return; }
   if (el.dataset.c) { S.cetakHarga[el.dataset.c][Number(el.dataset.i)] = nilaiField(el) || null; simpan(); return; }
+  if (el.id === 'cariCust') { $('#hasilCust').innerHTML = hasilCariCustomer(el.value); return; }
   const k = el.dataset.f;
   if (!k || !F || el.tagName === 'SELECT') return;
+  if (k === 'customer' && (formJenis === 'jadwal' || formJenis === 'masuk')) tampilSaran(el.value);
   if ((formJenis === 'jadwal' || formJenis === 'lunas') && ['addonQty', 'amNama', 'amHarga'].includes(k)) {
     if (k === 'addonQty') { const id = el.dataset.id, n = Math.max(0, Number(el.value) || 0), a = S.addon.find(x => x.id === id); F.addon[id] = n; $('#sub-' + id).textContent = n ? rp(n * a.harga) : '—'; el.closest('.addon').classList.toggle('on', n > 0); }
     else { const a = F.addonManual[el.dataset.i]; if (k === 'amNama') a.nama = el.value; else a.harga = nilaiField(el); }
@@ -1254,6 +1489,7 @@ document.addEventListener('input', e => {
     if (k === 'bayarLunas') F.bayarManual = true;
     segarkanLunas();
   } else if (formJenis === 'jadwal') {
+    if (k === 'dpAwal') F.dpAwalManual = true;
     if (k === 'tanggal') $('#hariJadwal').textContent = v ? 'Fotoshoot: ' + tglPanjang(v) : 'Pilih tanggal fotoshoot';
     segarkanJadwal();
   } else if (formJenis === 'keluar') {
@@ -1297,7 +1533,22 @@ $('#fileRestore').addEventListener('change', async e => {
 });
 
 let toastT;
-function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2400); }
+function toast(t, aksi) {
+  const el = $('#toast'); el.textContent = t;
+  if (aksi) { const b = document.createElement('button'); b.textContent = aksi.label; b.onclick = () => { el.classList.remove('on'); aksi.fn(); }; el.appendChild(b); }
+  el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), aksi ? 6500 : 2400);
+}
+// popover penjelasan (ikon ?)
+function tampilTanya(btn) {
+  document.querySelector('.pop-tanya')?.remove();
+  const p = document.createElement('div'); p.className = 'pop-tanya'; p.setAttribute('role', 'tooltip'); p.textContent = BANTUAN[btn.dataset.v] || '';
+  document.body.appendChild(p);
+  const r = btn.getBoundingClientRect(), w = Math.min(300, innerWidth - 24);
+  p.style.width = w + 'px'; p.style.left = Math.max(12, Math.min(innerWidth - w - 12, r.left + r.width / 2 - w / 2)) + 'px';
+  const bawah = r.bottom + 8 + p.offsetHeight < innerHeight; p.style.top = (bawah ? r.bottom + 8 : r.top - 8 - p.offsetHeight) + 'px';
+}
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.pop-tanya,.tanya')) document.querySelector('.pop-tanya')?.remove(); }, true);
+addEventListener('scroll', () => document.querySelector('.pop-tanya')?.remove(), true);
 
 // rincian yang tertutup tetap ikut tercetak
 addEventListener('beforeprint', () => document.querySelectorAll('details.rinci-grup:not([open]),details.rinci-item:not([open])').forEach(d => { d.open = true; d.dataset.cetak = '1'; }));
