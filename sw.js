@@ -1,6 +1,6 @@
 // Cache file aplikasi supaya Studio Foto tetap terbuka tanpa internet.
-const C = 'studiofoto-v22';
-const FILES = ['./', 'index.html', 'app.css', 'app.js', 'charts.js', 'closing.js', 'sinkron.js', 'notif.js', 'manifest.json', 'icon.svg', 'ikon-192.png', 'ikon-512.png'];
+const C = 'studiofoto-v23';
+const FILES = ['./', 'index.html', 'app.css', 'app.js', 'charts.js', 'closing.js', 'sinkron.js', 'notif.js', 'notif.mp3', 'manifest.json', 'icon.svg', 'ikon-192.png', 'ikon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(C).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {
