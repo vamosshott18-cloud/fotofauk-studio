@@ -109,6 +109,7 @@ function muat() {
   return dataAwal();
 }
 let S = muat();
+S.cetak ||= [];
 function simpan() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Gagal menyimpan di perangkat ini'); } window.setelahSimpan?.(); }
 function ui(k, v) { try { if (v === undefined) return localStorage.getItem('sf_' + k); localStorage.setItem('sf_' + k, v); } catch (e) {} }
 
@@ -132,11 +133,11 @@ function buang(koleksi, id) {
   (S.sampah ||= []).push({ id: sid, koleksi, data, ikut, waktu: new Date().toISOString(), oleh: namaSaya() });
   simpan(); tutupModal(); render();
   const nama = data.customer || data.nama || 'catatan';
-  toast(`${{ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran' }[koleksi]} ${nama} dihapus`, { label: 'Batalkan', fn: () => pulihkan(sid) });
+  toast(`${{ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran', cetak: 'Data cetak' }[koleksi]} ${nama} dihapus`, { label: 'Batalkan', fn: () => pulihkan(sid) });
 }
 function pulihkan(sid) {
   const x = (S.sampah || []).find(y => y.id === sid); if (!x) return;
-  S[x.koleksi].push(x.data); (x.ikut || []).forEach(k => S.keluar.push(k));
+  (S[x.koleksi] ||= []).push(x.data); (x.ikut || []).forEach(k => S.keluar.push(k));
   S.sampah = S.sampah.filter(y => y.id !== sid);
   simpan(); render(); toast('Dipulihkan');
 }
@@ -156,7 +157,7 @@ const tanya = k => `<button type="button" class="tanya" data-act="tanya" data-v=
 
 const hariIni = iso(new Date());
 let tab = ui('tab') || 'beranda';
-if (!['beranda', 'jadwal', 'progres', 'kas', 'masuk', 'keluar', 'laba', 'atur'].includes(tab)) tab = 'beranda';
+if (!['beranda', 'cetak', 'progres', 'kas', 'masuk', 'keluar', 'laba', 'atur'].includes(tab)) tab = 'beranda';
 let filterKas = 'semua', cari = '', animasi = true;
 let hariPilih = hariIni;
 let bulanKal = keTgl(hariIni.slice(0, 8) + '01');
@@ -237,7 +238,7 @@ function render() {
   document.title = S.setelan.nama || 'Studio Foto';
   const navAktif = tab === 'masuk' || tab === 'keluar' ? 'kas' : tab;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === navAktif));
-  const v = { beranda: viewBeranda, jadwal: viewJadwal, progres: viewProgres, kas: viewKas, masuk: viewMasuk, keluar: viewKeluar, laba: viewLaporan, atur: viewAtur }[tab] || viewBeranda;
+  const v = { beranda: viewBeranda, cetak: viewCetak, progres: viewProgres, kas: viewKas, masuk: viewMasuk, keluar: viewKeluar, laba: viewLaporan, atur: viewAtur }[tab] || viewBeranda;
   const view = $('#view');
   view.innerHTML = v();
   view.classList.toggle('animasi', animasi); animasi = false;   // animasi masuk hanya saat pindah halaman
@@ -291,6 +292,61 @@ function viewProgres() {
   }
   return `<div class="judul"><div><h1>Progres</h1><div class="sub">Pilih tahap untuk melihat bookingnya</div></div></div>
     <div class="pg-pil-list">${opsi}</div>${isi}`;
+}
+
+// ---------- Data Cetak (pengganti AppSheet "Produksi Foto · Data Cetak") ----------
+const UKURAN_DC = ['4R', '10R', '12R', '16R', '18R', '20R', '20Rs', '24R'];
+const STATUS_CETAK = ['Proses Edit', 'Proses Cetak', 'Selesai'];
+let filterCetak = 'aktif';
+const totalLembar = c => UKURAN_DC.reduce((s, u) => s + (Number(c.qty?.[u]) || 0), 0);
+const ringkasUkuran = c => UKURAN_DC.filter(u => Number(c.qty?.[u])).map(u => `${u} × ${c.qty[u]}`).join(' · ');
+function viewCetak() {
+  const semua = S.cetak || [], q = cari.trim().toLowerCase();
+  const n = st => semua.filter(c => c.status === st).length;
+  const pil = [['aktif', 'Belum selesai', semua.filter(c => c.status !== 'Selesai').length], ...STATUS_CETAK.map(st => [st, st, n(st)]), ['semua', 'Semua', semua.length]];
+  const list = semua.filter(c => filterCetak === 'semua' || (filterCetak === 'aktif' ? c.status !== 'Selesai' : c.status === filterCetak))
+    .filter(c => !q || (c.customer + ' ' + (c.jenis || '') + ' ' + (c.catatan || '')).toLowerCase().includes(q))
+    .sort((a, b) => STATUS_CETAK.indexOf(a.status) - STATUS_CETAK.indexOf(b.status) || (b.dibuat || '').localeCompare(a.dibuat || ''));
+  const kartu = c => { const i = STATUS_CETAK.indexOf(c.status); return `<div class="pg-item"><div class="bk dc" role="button" tabindex="0" data-act="editCetak" data-id="${c.id}">
+      <div class="dc-n tnum">${totalLembar(c)}<small>lembar</small></div>
+      <div class="bk-isi"><b>${esc(c.customer)}</b><span>${esc(c.jenis || '—')}</span><span class="dc-uk">${esc(ringkasUkuran(c) || 'belum isi ukuran')}</span>${c.catatan ? `<span class="dc-cat">${esc(c.catatan)}</span>` : ''}
+        <div class="chips"><span class="chip dc${i}">${esc(c.status)}</span></div></div></div>
+      ${i < STATUS_CETAK.length - 1 ? `<div class="pg-aksi"><span></span><button class="btn btn-kecil btn-utama" data-act="geserCetak" data-id="${c.id}">Lanjut: ${esc(STATUS_CETAK[i + 1])} ›</button></div>` : ''}</div>`; };
+  return `<div class="judul"><div><h1>Data Cetak</h1><div class="sub">Ukuran & jumlah cetak per customer</div></div>
+    <div class="kanan"><button class="btn btn-utama btn-kecil" data-act="tambah">+ Data cetak</button></div></div>
+  <div class="pg-pil-list">${pil.map(([v, l, k]) => `<button class="pg-pil ${filterCetak === v ? 'on' : ''}" data-act="filterCetak" data-v="${esc(v)}">${esc(l)} <b class="tnum">${k}</b></button>`).join('')}</div>
+  <label class="cari-hp cari-kas"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariCetak" type="search" value="${esc(cari)}" placeholder="Cari customer, paket, catatan" autocomplete="off"></label>
+  <section class="card pg-list"><div class="daftar">${list.length ? list.map(kartu).join('') : '<div class="kosong">Belum ada data cetak di sini.</div>'}</div></section>`;
+}
+function cetakBaru() { F = { id: null, customer: '', jenis: '', qty: {}, catatan: '', status: STATUS_CETAK[0] }; formJenis = 'cetak'; bukaModal(formCetak()); }
+function formCetak() {
+  const d = F, jenisList = [...new Set(S.jadwal.map(j => j.jenis + ' · ' + j.paket).concat(daftarJenis()))];
+  return `${kepala(d.id ? 'Ubah data cetak' : 'Data cetak baru')}
+  <div class="sheet-body">
+    ${bagian(1, 'Customer', 'Nama yang cetak dan paketnya', `
+      ${fld('Nama customer', `<input class="besar" data-f="customer" value="${esc(d.customer)}" placeholder="Ketik nama — muncul saran dari booking" autocomplete="off">`, { wajib: true })}
+      <div id="saranCust" class="saran" hidden></div>
+      ${fld('Jenis paket', `<input data-f="jenis" list="dlJenisCetak" value="${esc(d.jenis)}" placeholder="mis. Paket Couple · Paket 2"><datalist id="dlJenisCetak">${jenisList.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`)}`)}
+    ${bagian(2, 'Ukuran cetak', 'Isi jumlah lembar per ukuran', `<div class="addon-list">${UKURAN_DC.map(u => { const n = Number(d.qty[u]) || 0; return `<div class="addon ${n ? 'on' : ''}"><div class="addon-nama"><b>${u}</b></div>
+      <div class="qty"><button type="button" data-act="cetakQty" data-u="${u}" data-d="-1" aria-label="Kurangi ${u}">−</button><input class="qty-in tnum" type="number" min="0" inputmode="numeric" data-f="cQty" data-u="${u}" value="${n}" aria-label="Jumlah ${u}"><button type="button" data-act="cetakQty" data-u="${u}" data-d="1" aria-label="Tambah ${u}">+</button></div></div>`; }).join('')}</div>
+      <div class="ringkas" style="margin-top:10px"><div class="row total" style="margin:0;border:0;padding:0"><span>Total</span><b class="tnum"><span id="totCetak">${totalLembar(d)}</span> lembar</b></div></div>`)}
+    ${bagian(3, 'Catatan & status', '', `
+      ${fld('Catatan', `<textarea data-f="catatan" rows="2" placeholder="mis. + bingkai, canvas, ambil Sabtu">${esc(d.catatan || '')}</textarea>`)}
+      <div class="f"><span>Status</span>${segPenuh('status', STATUS_CETAK.map(s => [s, s]), d.status)}</div>`)}
+  </div>
+  <div class="sheet-foot">
+    ${d.id ? '<button class="btn btn-hapus btn-kecil" data-act="hapusCetak">Hapus</button>' : ''}
+    ${d.id && jejak(d) ? `<small class="jejak">${jejak(d)}</small>` : ''}
+    <span class="spacer"></span>
+    <button class="btn" data-act="tutup">Batal</button>
+    <button class="btn btn-utama" data-act="simpanCetak">Simpan</button>
+  </div>`;
+}
+function simpanCetak() {
+  if (!F.customer.trim()) return toast('Isi nama customer dulu');
+  const c = { ...F, customer: F.customer.trim(), jenis: (F.jenis || '').trim(), catatan: (F.catatan || '').trim(), qty: Object.fromEntries(Object.entries(F.qty).filter(([, n]) => Number(n) > 0)) };
+  if (!c.id) { c.id = uid(); cap(c, true); S.cetak.push(c); } else { cap(c); S.cetak[S.cetak.findIndex(x => x.id === c.id)] = c; }
+  simpan(); tutupModal(); render(); toast('Data cetak tersimpan');
 }
 
 function viewJadwal() {
@@ -380,6 +436,8 @@ function viewBeranda() {
   <label class="cari-hp"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariBeranda" type="search" placeholder="Cari customer, paket, pengeluaran" autocomplete="off"></label>
   <div class="sapa"><b>${sapa} <span class="lambai">👋</span></b><small>${esc(tglPanjang(hariIni))}</small></div>
   ${typeof bannerNotif === 'function' ? bannerNotif() : ''}
+  <h2 class="judul-bagian">Jadwal</h2>
+  ${viewJadwal()}
   <section class="saldo">
     <small>Bersih ${BULAN[D.mo - 1]}</small>
     <b data-hitung="${D.bersih}">${rp(D.bersih)}</b>
@@ -394,7 +452,7 @@ function viewBeranda() {
   </section>
   <section class="menu-ikon">${menu.map(([k, n, w, act, v], i) => `<button class="tk" data-act="${act}" data-v="${v}" style="--i:${i}"><i class="${w}">${ikon(k)}</i><span>${n}</span></button>`).join('')}</section>
   <div class="br-dua">
-    <section class="br-kartu"><div class="br-head"><h2>Hari ini</h2><button class="btn btn-kecil btn-cari" data-act="cariCust">${ikon('cari')}Cari customer</button><button class="link" data-act="buka" data-v="jadwal">Jadwal</button></div>
+    <section class="br-kartu"><div class="br-head"><h2>Hari ini</h2><button class="btn btn-kecil btn-cari" data-act="cariCust">${ikon('cari')}Cari customer</button></div>
       ${hariIniList.length ? hariIniList.map(baris).join('') : '<p class="br-kosong">Belum ada jadwal hari ini.</p>'}
       ${besokList.length ? `<div class="br-sub">Besok · ${besokList.length} jadwal</div>${besokList.slice(0, 3).map(baris).join('')}` : ''}
       ${tindakan.length ? `<div class="br-sub">Perlu tindakan</div>
@@ -866,7 +924,7 @@ function viewAtur() {
     ${typeof kartuDatabase === 'function' ? kartuDatabase() : ''}
     ${typeof kartuNotif === 'function' ? kartuNotif() : ''}
     <div class="card lebar"><h2>Tempat sampah <small class="bantu">· disimpan 30 hari</small></h2>
-      ${(S.sampah || []).length ? [...S.sampah].sort((x, y) => y.waktu.localeCompare(x.waktu)).map(x => `<div class="baris"><div class="isi"><b>${esc({ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran' }[x.koleksi])} · ${esc(x.data.customer || x.data.nama || '—')}</b><span>dihapus ${x.oleh ? esc(x.oleh) + ' · ' : ''}${jamTgl(x.waktu)}${x.ikut?.length ? ' · + ' + x.ikut.length + ' pengeluaran otomatis' : ''}</span></div><button class="btn btn-kecil" data-act="pulihkan" data-id="${x.id}">Pulihkan</button></div>`).join('')
+      ${(S.sampah || []).length ? [...S.sampah].sort((x, y) => y.waktu.localeCompare(x.waktu)).map(x => `<div class="baris"><div class="isi"><b>${esc({ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran', cetak: 'Data cetak' }[x.koleksi])} · ${esc(x.data.customer || x.data.nama || '—')}</b><span>dihapus ${x.oleh ? esc(x.oleh) + ' · ' : ''}${jamTgl(x.waktu)}${x.ikut?.length ? ' · + ' + x.ikut.length + ' pengeluaran otomatis' : ''}</span></div><button class="btn btn-kecil" data-act="pulihkan" data-id="${x.id}">Pulihkan</button></div>`).join('')
         : '<div class="kosong" style="padding:14px">Kosong. Data yang dihapus muncul di sini dan bisa dipulihkan.</div>'}</div>
     <div class="card lebar"><h2>Data</h2>
       <div class="baris"><div class="isi"><b>Backup data</b><span>Simpan semua jadwal, pemasukan, pengeluaran & pengaturan ke file JSON.</span></div><button class="btn btn-kecil" data-act="backup">Unduh backup</button></div>
@@ -892,7 +950,7 @@ function segarkanLunas() {
 }
 function gambarUlangForm() {
   const body = document.querySelector('.sheet-body'), top = body ? body.scrollTop : 0;
-  document.querySelector('.sheet').innerHTML = { jadwal: formJadwal, masuk: formMasuk, keluar: formKeluar, lunas: formLunas }[formJenis]();
+  document.querySelector('.sheet').innerHTML = { jadwal: formJadwal, masuk: formMasuk, keluar: formKeluar, lunas: formLunas, cetak: formCetak }[formJenis]();
   document.querySelector('.sheet-body').scrollTop = top;
 }
 const kepala = judul => `<div class="sheet-head"><h2>${judul}</h2><button class="x" data-act="tutup" aria-label="Tutup">×</button></div>`;
@@ -1349,7 +1407,7 @@ function exportCsv(j) {
 
 // ---------- event ----------
 const AKSI = {
-  tab: el => { tab = el.dataset.tab; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
+  tab: el => { if (el.dataset.tab !== tab) cari = ''; tab = el.dataset.tab; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
   buka: el => { tab = el.dataset.v; ui('tab', tab); animasi = true; render(); window.scrollTo(0, 0); },
   bukaKas: el => { filterKas = el.dataset.v || 'semua'; if (filterKas === 'dp') periode = hariIni.slice(0, 7); tab = 'kas'; animasi = true; render(); window.scrollTo(0, 0); },
   bukaKasDp: () => AKSI.bukaKas({ dataset: { v: 'dp' } }),
@@ -1363,9 +1421,9 @@ const AKSI = {
   pilihUkuran: el => { const u = el.dataset.v; F.cUkuran = F.cUkuran.includes(u) ? F.cUkuran.filter(x => x !== u) : UKURAN_CETAK.filter(x => x === u || F.cUkuran.includes(x)); gambarUlangForm(); },
   gantiFont: el => { S.setelan.font = el.dataset.v; simpan(); render(); toast('Font: ' + el.dataset.v); },
   tambahJenis: el => { const v = el.dataset.v; tutupModal(); ({ jadwal: jadwalBaru, masuk: () => masukBaru(), dp: () => masukBaru(null, 'dp'), lunas: daftarPelunasan, keluar: keluarBaru, cari: cariCustomer })[v](); },
-  tambah: () => ({ jadwal: jadwalBaru, masuk: () => masukBaru(), keluar: keluarBaru }[tab] || (() => {}))(),
+  tambah: () => ({ beranda: jadwalBaru, masuk: () => masukBaru(), keluar: keluarBaru, cetak: cetakBaru }[tab] || (() => {}))(),
   pilihHari: el => { hariPilih = el.dataset.tgl; render(); },
-  pilihCust: el => { const c = SARAN[el.dataset.i]; if (!c) return; F.customer = c.nama; if (formJenis === 'jadwal') { if (c.kontak) F.kontak = c.kontak; if (c.ig) F.ig = c.ig; } gambarUlangForm(); },
+  pilihCust: el => { const c = SARAN[el.dataset.i]; if (!c) return; F.customer = c.nama; if (formJenis === 'cetak' && !F.jenis) { const j = [...S.jadwal].reverse().find(x => x.customer.trim().toLowerCase() === c.nama.trim().toLowerCase()); if (j) F.jenis = j.jenis + ' · ' + j.paket; } if (formJenis === 'jadwal') { if (c.kontak) F.kontak = c.kontak; if (c.ig) F.ig = c.ig; } gambarUlangForm(); },
   cariCust: cariCustomer,
   bulanKal: el => { bulanKal = new Date(bulanKal.getFullYear(), bulanKal.getMonth() + Number(el.dataset.d), 1); render(); },
   keHariIni: () => { hariPilih = hariIni; bulanKal = keTgl(hariIni.slice(0, 8) + '01'); render(); },
@@ -1380,6 +1438,11 @@ const AKSI = {
     const i = Math.max(0, Math.min(STATUS_JADWAL.length - 1, STATUS_JADWAL.indexOf(j.status || STATUS_JADWAL[0]) + Number(el.dataset.d)));
     j.status = STATUS_JADWAL[i]; cap(j); simpan(); render(); toast(j.customer + ' → ' + j.status);
   },
+  filterCetak: el => { filterCetak = el.dataset.v; render(); },
+  editCetak: el => { tutupModal(); F = JSON.parse(JSON.stringify(S.cetak.find(c => c.id === el.dataset.id))); F.qty ||= {}; formJenis = 'cetak'; bukaModal(formCetak()); },
+  cetakQty: el => { const u = el.dataset.u; F.qty[u] = Math.max(0, (Number(F.qty[u]) || 0) + Number(el.dataset.d)); gambarUlangForm(); },
+  simpanCetak, hapusCetak: () => buang('cetak', F.id),
+  geserCetak: el => { const c = S.cetak.find(x => x.id === el.dataset.id); if (!c) return; c.status = STATUS_CETAK[Math.min(STATUS_CETAK.length - 1, STATUS_CETAK.indexOf(c.status) + 1)]; cap(c); simpan(); render(); toast(c.customer + ' → ' + c.status); },
   setF: el => {
     const k = el.dataset.k, v = el.dataset.v;
     F[k] = v;
@@ -1473,6 +1536,7 @@ function nilaiField(el) {
 document.addEventListener('input', e => {
   const el = e.target;
   // pencarian: dari kotak mana pun pindah ke Riwayat (semua bulan), fokus tetap di kotak cari
+  if (el.id === 'cariCetak') { cari = el.value; render(); const t = $('#cariCetak'); if (t) { t.focus(); t.setSelectionRange(cari.length, cari.length); } return; }
   if (el.id === 'cariTop' || el.id === 'cariBeranda' || el.id === 'cariKas') {
     cari = el.value;
     if (tab !== 'kas') { tab = 'kas'; filterKas = 'semua'; periode = 'semua'; }
@@ -1491,13 +1555,14 @@ document.addEventListener('input', e => {
   if (el.id === 'cariCust') { $('#hasilCust').innerHTML = hasilCariCustomer(el.value); return; }
   const k = el.dataset.f;
   if (!k || !F || el.tagName === 'SELECT') return;
-  if (k === 'customer' && (formJenis === 'jadwal' || formJenis === 'masuk')) tampilSaran(el.value);
+  if (k === 'customer' && (formJenis === 'jadwal' || formJenis === 'masuk' || formJenis === 'cetak')) tampilSaran(el.value);
   if ((formJenis === 'jadwal' || formJenis === 'lunas') && ['addonQty', 'amNama', 'amHarga'].includes(k)) {
     if (k === 'addonQty') { const id = el.dataset.id, n = Math.max(0, Number(el.value) || 0), a = S.addon.find(x => x.id === id); F.addon[id] = n; $('#sub-' + id).textContent = n ? rp(n * a.harga) : '—'; el.closest('.addon').classList.toggle('on', n > 0); }
     else { const a = F.addonManual[el.dataset.i]; if (k === 'amNama') a.nama = el.value; else a.harga = nilaiField(el); }
     if (formJenis === 'jadwal') segarkanJadwal(); else segarkanLunas();
     return;
   }
+  if (formJenis === 'cetak' && k === 'cQty') { const u = el.dataset.u, n = Math.max(0, Number(el.value) || 0); F.qty[u] = n; el.closest('.addon').classList.toggle('on', n > 0); const t = $('#totCetak'); if (t) t.textContent = totalLembar(F); return; }
   const v = nilaiField(el);
   if (k === 'nominalAbs') F.nominal = (F.tanda === '-' ? -1 : 1) * v;
   else F[k] = v;

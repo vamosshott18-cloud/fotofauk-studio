@@ -189,7 +189,7 @@ function izinNotif() {
 const BULAN_ID = ['JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'];
 function emailBackup_() { return PropertiesService.getScriptProperties().getProperty('EMAIL_BACKUP') || Session.getEffectiveUser().getEmail(); }
 function dataAplikasi_() {
-  const S = { jadwal: [], masuk: [], keluar: [], sampah: [] };
+  const S = { jadwal: [], masuk: [], keluar: [], sampah: [], cetak: [] };
   sheet_().getDataRange().getValues().slice(1).forEach(v => {
     if (Number(v[3]) || !v[4]) return;
     const d = JSON.parse(v[4]);
@@ -218,21 +218,25 @@ function kirimBackupEmail_(periode, judul, catatan) {
     .concat(keluar.map(k => [k.tanggal, k.bulan, k.nama, k.jenis || 'lain', k.nominal, k.jumlah, totalKeluar_(k), k.status, k.fotografer || ''])));
   const csvJadwal = csv_([['Tanggal foto', 'Jam', 'Customer', 'No HP', 'Instagram', 'Jenis', 'Paket', 'Status', 'Fotografer', 'Tgl booking']]
     .concat(jadwal.map(j => [j.tanggal, j.jam, j.customer, j.kontak, j.ig, j.jenis, j.paket, j.status, j.fotografer, j.tglBooking])));
+  const cetak = S.cetak.filter(c => semua || String(c.dibuat || '').slice(0, 7) === periode || c.status !== 'Selesai');
+  const csvCetak = csv_([['Customer', 'Jenis paket', '4R', '10R', '12R', '16R', '18R', '20R', '20Rs', '24R', 'Catatan', 'Status', 'Diinput']]
+    .concat(cetak.map(c => [c.customer, c.jenis].concat(['4R', '10R', '12R', '16R', '18R', '20R', '20Rs', '24R'].map(u => (c.qty || {})[u] || '')).concat([c.catatan || '', c.status, String(c.dibuat || '').slice(0, 10)]))));
   const nama = semua ? 'semua-data' : periode, tgl = Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd');
   const bom = '﻿';
   const lampiran = [
     Utilities.newBlob(bom + csvMasuk, 'text/csv', 'Pemasukan ' + nama + '.csv'),
     Utilities.newBlob(bom + csvKeluar, 'text/csv', 'Pengeluaran ' + nama + '.csv'),
     Utilities.newBlob(bom + csvJadwal, 'text/csv', 'Jadwal ' + nama + '.csv'),
+    Utilities.newBlob(bom + csvCetak, 'text/csv', 'Data cetak ' + nama + '.csv'),
     Utilities.newBlob(JSON.stringify(S), 'application/json', 'backup-data-FotoFaukStudio-' + tgl + '.json')
   ];
   const isi = [judul, '', catatan || '',
     'Pemasukan (lunas): ' + rp_(tm) + '  (' + lunas.length + ' transaksi)', 'Pengeluaran: ' + rp_(tk) + '  (' + keluar.length + ' transaksi)', 'Bersih: ' + rp_(tm - tk),
-    dp.length ? 'DP belum lunas: ' + dp.length + ' (titipan ' + rp_(dp.reduce((s, m) => s + (Number(m.dp) || 0), 0)) + ')' : '', 'Jadwal/booking: ' + jadwal.length, '',
-    'Lampiran: 3 file CSV (buka di Excel) + file backup .json.',
+    dp.length ? 'DP belum lunas: ' + dp.length + ' (titipan ' + rp_(dp.reduce((s, m) => s + (Number(m.dp) || 0), 0)) + ')' : '', 'Jadwal/booking: ' + jadwal.length, 'Data cetak: ' + cetak.length, '',
+    'Lampiran: 4 file CSV (buka di Excel) + file backup .json.',
     'Memulihkan: buka aplikasi → Atur (ikon gerigi) → Pulihkan dari backup → pilih file .json ini.'].join('\n');
   MailApp.sendEmail({ to: emailBackup_(), subject: 'FotoFauk Studio — ' + judul, body: isi, attachments: lampiran, name: 'FotoFauk Studio' });
-  return { masuk: masuk.length, keluar: keluar.length, jadwal: jadwal.length };
+  return { masuk: masuk.length, keluar: keluar.length, jadwal: jadwal.length, cetak: cetak.length };
 }
 
 // dipanggil pemicu bulanan

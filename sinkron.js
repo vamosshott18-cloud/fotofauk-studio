@@ -7,7 +7,7 @@
 
 const DB_BAWAAN = 'https://script.google.com/macros/s/AKfycbzaW9N6WNjd1kQBjXKNl8aQsXxFLTLYLjLYV3xv_qan-blr2FVjLt-VbrZ9Vvbb4HHDmw/exec';
 const DB_KEY = 'sf_db', PIN_KEY = 'sf_pin', SEJAK_KEY = 'sf_sejak', TERKIRIM_KEY = 'sf_terkirim';
-const KOLEKSI = ['jadwal', 'masuk', 'keluar', 'sampah'];
+const KOLEKSI = ['jadwal', 'masuk', 'keluar', 'sampah', 'cetak'];
 let dbUrl = bacaLS(DB_KEY) || DB_BAWAAN;
 let pin = bacaLS(PIN_KEY) || '';
 let sejak = Number(bacaLS(SEJAK_KEY)) || 0;
@@ -21,7 +21,7 @@ function tulisLS(k, v) { try { v == null ? localStorage.removeItem(k) : localSto
 function semuaCatatan() {
   const out = {};
   KOLEKSI.forEach(k => (S[k] || []).forEach(r => { out[k + '|' + r.id] = JSON.stringify(r); }));
-  const { jadwal, masuk, keluar, sampah, ...konfig } = S;
+  const { jadwal, masuk, keluar, sampah, cetak, ...konfig } = S;
   out['setelan|utama'] = JSON.stringify(konfig);
   return out;
 }

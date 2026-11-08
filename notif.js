@@ -181,7 +181,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
   if (id) {
     p.delete('buka'); history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p : '') + location.hash);
     let n = 0;
-    const coba = () => { if (S.jadwal.some(j => j.id === id)) { tab = 'jadwal'; render(); AKSI.editJadwal({ dataset: { id } }); } else if (++n < 20) { if (n === 1 && typeof sinkron === 'function') sinkron(); setTimeout(coba, 700); } };
+    const coba = () => { if (S.jadwal.some(j => j.id === id)) { tab = 'beranda'; render(); AKSI.editJadwal({ dataset: { id } }); } else if (++n < 20) { if (n === 1 && typeof sinkron === 'function') sinkron(); setTimeout(coba, 700); } };
     setTimeout(coba, 300);
   }
   // segarkan langganan sehari sekali (endpoint bisa berubah) + kirim antrean yang tertinggal
