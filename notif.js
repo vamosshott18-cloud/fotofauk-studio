@@ -67,7 +67,9 @@ async function aktifkanNotif() {
   if (!notifDidukung()) { toast('Browser ini belum mendukung notifikasi. Pakai Chrome/Edge/Safari terbaru.'); return; }
   if (!pin) { toast('Masuk dengan PIN studio dulu'); return; }
   const izin = await Notification.requestPermission();
-  if (izin !== 'granted') { toast(izin === 'denied' ? 'Notifikasi diblokir. Izinkan lewat pengaturan situs/browser.' : 'Notifikasi belum diizinkan'); render(); return; }
+  if (izin !== 'granted') { alert(izin === 'denied'
+    ? 'Notifikasi diblokir di browser ini.\n\nKlik ikon gembok / pengaturan di kiri alamat situs → Notifikasi → Izinkan, lalu muat ulang halaman dan klik Aktifkan lagi.'
+    : 'Izin notifikasi belum diberikan.\n\nDi laptop/PC, Chrome kadang menyembunyikan pertanyaan izinnya: lihat ikon lonceng/gembok di ujung kolom alamat → pilih Izinkan, lalu klik Aktifkan lagi.'); render(); return; }
   try {
     toast('Mengaktifkan notifikasi…');
     const v = await kunciVapid();
@@ -79,7 +81,7 @@ async function aktifkanNotif() {
     await panggilDb({ aksi: 'langganan', sub: sub.toJSON(), nama: bacaLS('sf_nama') || '', perangkat: namaPerangkat() });
     tulisLS(NOTIF_KEY, sub.endpoint); tulisLS('sf_notif_cek', String(Date.now()));
     render(); toast('Notifikasi aktif di perangkat ini 🔔');
-  } catch (e) { console.error(e); toast('Gagal mengaktifkan notifikasi — cek internet lalu coba lagi'); }
+  } catch (e) { console.error(e); alert('Gagal mengaktifkan notifikasi: ' + (e && e.message || e) + '\n\nCek internet lalu coba lagi. Kalau tetap gagal, kirim tulisan ini ke Fadlan.'); }
 }
 async function matikanNotif() {
   try {
@@ -148,7 +150,7 @@ function kartuNotif() {
   const aktif = notifAktif(), ditolak = notifDidukung() && Notification.permission === 'denied';
   return `<div class="card lebar"><h2>Notifikasi booking</h2>
     <div class="baris"><span class="status-db ${aktif ? 'tersinkron' : 'menunggu'}"></span><div class="isi"><b>${aktif ? 'Aktif di perangkat ini' : ditolak ? 'Diblokir di browser ini' : 'Belum aktif di perangkat ini'}</b>
-      <span>Setiap ada yang menyimpan booking baru, semua HP/PC yang notifikasinya aktif langsung dapat pemberitahuan (aplikasi tidak perlu dibuka).${iPhoneBelumDipasang() ? ' Di iPhone: pasang dulu lewat Bagikan → Tambah ke Layar Utama.' : ''}</span></div>
+      <span>Setiap ada yang menyimpan booking baru, semua HP/PC yang notifikasinya aktif langsung dapat pemberitahuan (aplikasi tidak perlu dibuka).${iPhoneBelumDipasang() ? ' Di iPhone: pasang dulu lewat Bagikan → Tambah ke Layar Utama.' : ''}${!/iPhone|iPad|Android/.test(navigator.userAgent) ? ' Di laptop/PC: notifikasi Chrome/Edge juga harus diizinkan di pengaturan notifikasi Windows/Mac.' : ''}</span></div>
       ${aktif ? '<button class="btn btn-kecil" data-act="matikanNotif">Matikan</button>' : `<button class="btn btn-kecil btn-utama" data-act="aktifkanNotif">Aktifkan</button>`}</div>
     ${aktif ? '<div class="baris"><div class="isi"><b>Coba notifikasi</b><span>Kirim satu notifikasi tes ke perangkat ini saja.</span></div><button class="btn btn-kecil" data-act="tesNotif">Kirim tes</button></div>' : ''}
   </div>`;
