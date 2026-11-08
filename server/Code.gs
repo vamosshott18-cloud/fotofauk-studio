@@ -181,3 +181,81 @@ function izinNotif() {
   UrlFetchApp.fetch('https://www.google.com/generate_204', { muteHttpExceptions: true });
   Logger.log('Siap: tab notif ada, izin UrlFetch diberikan.');
 }
+
+// ---------- Backup bulanan ke email ----------
+// Tiap tanggal 1 jam 01.00 (WIB): data bulan sebelumnya dikirim ke EMAIL_BACKUP (default akun studio) berisi
+// ringkasan + CSV pemasukan/pengeluaran/jadwal (buka di Excel) + file backup JSON lengkap (Atur → Pulihkan di aplikasi).
+// Data di aplikasi TIDAK dihapus — tampilan bulan baru otomatis mulai dari 0.
+const BULAN_ID = ['JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'];
+function emailBackup_() { return PropertiesService.getScriptProperties().getProperty('EMAIL_BACKUP') || Session.getEffectiveUser().getEmail(); }
+function dataAplikasi_() {
+  const S = { jadwal: [], masuk: [], keluar: [], sampah: [] };
+  sheet_().getDataRange().getValues().slice(1).forEach(v => {
+    if (Number(v[3]) || !v[4]) return;
+    const d = JSON.parse(v[4]);
+    if (v[0] === 'setelan') Object.assign(S, d); else if (S[v[0]]) S[v[0]].push(d);
+  });
+  return S;
+}
+const nominalOf_ = m => m.tambahan === 'ADA' ? Number(m.nominal) || 0 : 0;
+const jumlahMasuk_ = m => ((Number(m.nilai) || 0) + nominalOf_(m)) * (Number(m.qty) || 0);
+const totalKeluar_ = k => (Number(k.nominal) || 0) * (Number(k.jumlah) || 0);
+const rp_ = n => 'Rp ' + Math.round(n).toLocaleString('id-ID');
+function csv_(rows) { return rows.map(r => r.map(x => { const s = x == null ? '' : String(x); return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(';')).join('\r\n'); }
+
+// periode: 'YYYY-MM' atau 'semua'
+function kirimBackupEmail_(periode, judul, catatan) {
+  const S = dataAplikasi_(), semua = periode === 'semua';
+  const y = semua ? 0 : Number(periode.slice(0, 4)), mo = semua ? 0 : Number(periode.slice(5, 7));
+  const cocok = r => semua || (r.bulan === BULAN_ID[mo - 1] && String(r.tanggal || '').slice(0, 4) === String(y));
+  const masuk = S.masuk.filter(cocok), keluar = S.keluar.filter(cocok);
+  const jadwal = S.jadwal.filter(j => semua || String(j.tanggal || '').slice(0, 7) === periode);
+  const lunas = masuk.filter(m => m.bayar !== 'dp'), dp = masuk.filter(m => m.bayar === 'dp');
+  const tm = lunas.reduce((s, m) => s + jumlahMasuk_(m), 0), tk = keluar.reduce((s, k) => s + totalKeluar_(k), 0);
+  const csvMasuk = csv_([['Tanggal', 'Bulan', 'Customer', 'Jenis', 'Paket', 'Nilai', 'Tambahan', 'Qty', 'Jumlah', 'Bayar', 'DP', 'Fotografer', 'Keterangan']]
+    .concat(masuk.map(m => [m.tanggal, m.bulan, m.customer || m.nama, m.jenis, m.paket, m.nilai, nominalOf_(m), m.qty, jumlahMasuk_(m), m.bayar === 'dp' ? 'DP' : 'Lunas', m.dp || '', m.fotografer || '', m.ket || ''])));
+  const csvKeluar = csv_([['Tanggal', 'Bulan', 'Nama', 'Jenis', 'Nominal', 'Jumlah', 'Total', 'Status', 'Fotografer']]
+    .concat(keluar.map(k => [k.tanggal, k.bulan, k.nama, k.jenis || 'lain', k.nominal, k.jumlah, totalKeluar_(k), k.status, k.fotografer || ''])));
+  const csvJadwal = csv_([['Tanggal foto', 'Jam', 'Customer', 'No HP', 'Instagram', 'Jenis', 'Paket', 'Status', 'Fotografer', 'Tgl booking']]
+    .concat(jadwal.map(j => [j.tanggal, j.jam, j.customer, j.kontak, j.ig, j.jenis, j.paket, j.status, j.fotografer, j.tglBooking])));
+  const nama = semua ? 'semua-data' : periode, tgl = Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyyy-MM-dd');
+  const bom = '﻿';
+  const lampiran = [
+    Utilities.newBlob(bom + csvMasuk, 'text/csv', 'Pemasukan ' + nama + '.csv'),
+    Utilities.newBlob(bom + csvKeluar, 'text/csv', 'Pengeluaran ' + nama + '.csv'),
+    Utilities.newBlob(bom + csvJadwal, 'text/csv', 'Jadwal ' + nama + '.csv'),
+    Utilities.newBlob(JSON.stringify(S), 'application/json', 'backup-data-FotoFaukStudio-' + tgl + '.json')
+  ];
+  const isi = [judul, '', catatan || '',
+    'Pemasukan (lunas): ' + rp_(tm) + '  (' + lunas.length + ' transaksi)', 'Pengeluaran: ' + rp_(tk) + '  (' + keluar.length + ' transaksi)', 'Bersih: ' + rp_(tm - tk),
+    dp.length ? 'DP belum lunas: ' + dp.length + ' (titipan ' + rp_(dp.reduce((s, m) => s + (Number(m.dp) || 0), 0)) + ')' : '', 'Jadwal/booking: ' + jadwal.length, '',
+    'Lampiran: 3 file CSV (buka di Excel) + file backup .json.',
+    'Memulihkan: buka aplikasi → Atur (ikon gerigi) → Pulihkan dari backup → pilih file .json ini.'].join('\n');
+  MailApp.sendEmail({ to: emailBackup_(), subject: 'FotoFauk Studio — ' + judul, body: isi, attachments: lampiran, name: 'FotoFauk Studio' });
+  return { masuk: masuk.length, keluar: keluar.length, jadwal: jadwal.length };
+}
+
+// dipanggil pemicu bulanan
+function kirimBackupBulanLalu() {
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+  const p = Utilities.formatDate(d, 'Asia/Jakarta', 'yyyy-MM'), b = BULAN_ID[d.getMonth()];
+  kirimBackupEmail_(p, 'Backup bulan ' + b.charAt(0) + b.slice(1).toLowerCase() + ' ' + d.getFullYear(), 'Backup otomatis tiap tanggal 1. Data tetap ada di aplikasi; bulan baru mulai dari 0.');
+}
+// jalankan sekali dari editor: pasang pemicu tanggal 1 jam 01.00 WIB
+function pasangPemicuBulanan() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'kirimBackupBulanLalu').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('kirimBackupBulanLalu').timeBased().onMonthDay(1).atHour(1).inTimezone('Asia/Jakarta').create();
+  Logger.log('Pemicu backup bulanan terpasang → ' + emailBackup_());
+}
+// jalankan sekali dari editor: kirim SEMUA data ke email, lalu kosongkan jadwal/pemasukan/pengeluaran/sampah
+// (pengaturan, paket, harga, team, PIN, langganan notifikasi tetap). Perangkat lain ikut kosong saat sinkron.
+function resetUntukTrial() {
+  const n = kirimBackupEmail_('semua', 'Backup sebelum reset trial', 'Semua data sebelum aplikasi dikosongkan untuk trial.');
+  const lock = LockService.getScriptLock(); lock.waitLock(25000);
+  try {
+    const sh = sheet_(), v = sh.getDataRange().getValues(), kini = Date.now();
+    const baru = v.map((r, i) => i === 0 || r[0] === 'setelan' ? r : [r[0], r[1], kini, 1, '']);
+    sh.getRange(1, 1, baru.length, 5).setValues(baru);
+  } finally { lock.releaseLock(); }
+  Logger.log('Backup terkirim ke ' + emailBackup_() + ' (' + JSON.stringify(n) + '), data dikosongkan.');
+}
