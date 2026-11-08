@@ -275,27 +275,22 @@ function kartuJadwal(j, tampilTgl) {
 
 // ---------- Progres pengerjaan ----------
 // Tab sendiri: pilih tahap dulu → baru muncul booking yang sedang di tahap itu.
-const IKON_PROGRES = ['📷', '🎨', '☁️', '📨', '✅'];
-const KET_PROGRES = ['Jadwal sudah dibuat, belum sesi foto', 'Foto sudah diambil, tinggal edit', 'Sudah diedit, belum diupload', 'Sudah diupload, belum dikirim ke customer', 'Hasil sudah diterima customer'];
 function viewProgres() {
   const per = STATUS_JADWAL.map(st => S.jadwal.filter(j => (j.status || STATUS_JADWAL[0]) === st));
-  const opsi = STATUS_JADWAL.map((st, i) => `<button class="pg-opsi st${i} ${progresPilih === i ? 'on' : ''}" data-act="pilihProgres" data-v="${i}">
-      <span class="pg-ik" aria-hidden="true">${IKON_PROGRES[i]}</span>
-      <span class="pg-tx"><b>${esc(st)}</b><small>${KET_PROGRES[i]}</small></span>
-      <span class="pg-n tnum">${per[i].length}</span></button>`).join('');
+  const opsi = STATUS_JADWAL.map((st, i) => `<button class="pg-pil ${progresPilih === i ? 'on' : ''}" data-act="pilihProgres" data-v="${i}">${esc(st)} <b class="tnum">${per[i].length}</b></button>`).join('');
   let isi = '';
   if (progresPilih !== null) {
     const i = progresPilih, st = STATUS_JADWAL[i];
     const list = per[i].slice().sort((a, b) => i === 0 ? (a.tanggal + a.jam).localeCompare(b.tanggal + b.jam) : (b.tanggal + b.jam).localeCompare(a.tanggal + a.jam));
     isi = `<section class="card pg-list" id="pgList">
-      <div class="kal-head"><h2>${IKON_PROGRES[i]} ${esc(st)}</h2><span class="chip st${i}">${list.length} booking</span></div>
+      <div class="kal-head"><h2>${esc(st)}</h2><span class="chip st${i}">${list.length} booking</span></div>
       <div class="daftar">${list.length ? list.map(j => `<div class="pg-item">${kartuJadwal(j, true)}
         <div class="pg-aksi">${i > 0 ? `<button class="btn btn-kecil" data-act="geserProgres" data-id="${j.id}" data-d="-1" title="Kembali ke ${esc(STATUS_JADWAL[i - 1])}">‹ Mundur</button>` : '<span></span>'}
         ${i < STATUS_JADWAL.length - 1 ? `<button class="btn btn-kecil btn-utama" data-act="geserProgres" data-id="${j.id}" data-d="1">Lanjut: ${esc(STATUS_JADWAL[i + 1])} ›</button>` : ''}</div></div>`).join('') : '<div class="kosong">Tidak ada booking di tahap ini.</div>'}</div>
     </section>`;
   }
-  return `<div class="judul"><div><h1>Progres</h1><div class="sub">Pilih tahap untuk melihat booking yang sedang di tahap itu</div></div></div>
-    <div class="pg-opsi-list">${opsi}</div>${isi}`;
+  return `<div class="judul"><div><h1>Progres</h1><div class="sub">Pilih tahap untuk melihat bookingnya</div></div></div>
+    <div class="pg-pil-list">${opsi}</div>${isi}`;
 }
 
 function viewJadwal() {

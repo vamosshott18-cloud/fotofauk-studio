@@ -848,3 +848,8 @@ h1{font-size:26px} h2{font-size:18px}
 .pg-aksi .btn{white-space:normal;line-height:1.25;min-width:0}
 .pg-aksi .btn-utama{flex:1;max-width:70%}
 @media(max-width:560px){.pg-list{padding:14px}.pg-item .bk{padding:10px;gap:10px}}
+.pg-pil-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.pg-pil{border:1px solid var(--line2);background:var(--white);color:var(--ink2);border-radius:999px;padding:8px 14px;font-weight:600;font-size:13.5px;cursor:pointer}
+.pg-pil b{margin-left:4px;color:var(--teal-s)}
+.pg-pil.on{background:var(--teal);border-color:var(--teal);color:#fff}
+.pg-pil.on b{color:#fff}
