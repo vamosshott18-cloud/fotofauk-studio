@@ -826,3 +826,25 @@ h1{font-size:26px} h2{font-size:18px}
 /* layar PIN: nama */
 .kotak-pin .isi-nama{width:100%;font:inherit;font-size:16px;padding:12px;border:1.5px solid #D5E3E3;border-radius:14px;margin-top:6px;text-align:center}
 @media print{ .lap-tab,.tanya{display:none} }
+
+/* tab Progres */
+.pg-opsi-list{display:grid;gap:10px;margin-bottom:16px}
+@media(min-width:760px){.pg-opsi-list{grid-template-columns:repeat(5,1fr)}.pg-opsi{flex-direction:column;align-items:flex-start;text-align:left}.pg-n{position:absolute;top:12px;right:14px}}
+.pg-opsi{position:relative;display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line2);background:var(--white);border-radius:16px;padding:14px;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s}
+.pg-opsi:active{transform:scale(.98)}
+.pg-opsi.on{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal) inset,var(--shadow)}
+.pg-ik{width:42px;height:42px;flex:none;border-radius:12px;display:grid;place-items:center;font-size:20px;background:var(--pale)}
+.pg-opsi.st0 .pg-ik{background:#FDF3C4}.pg-opsi.st4 .pg-ik{background:var(--teal)}
+.pg-tx{flex:1;min-width:0}.pg-tx b{display:block;font-size:14.5px}.pg-tx small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.pg-n{font-weight:800;font-size:20px;color:var(--teal-s)}
+.pg-list .kal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.pg-list .kal-head h2{margin:0;font-size:17px}
+.pg-item{display:grid;gap:6px}
+.pg-aksi{display:flex;justify-content:space-between;gap:8px}
+.pg-list{min-width:0;overflow:hidden}
+.pg-item,.pg-list .daftar{min-width:0;display:grid;gap:8px}
+.pg-list .daftar{gap:14px}
+.pg-item .bk{min-width:0;grid-template-columns:56px minmax(0,1fr) auto}
+.pg-aksi .btn{white-space:normal;line-height:1.25;min-width:0}
+.pg-aksi .btn-utama{flex:1;max-width:70%}
+@media(max-width:560px){.pg-list{padding:14px}.pg-item .bk{padding:10px;gap:10px}}

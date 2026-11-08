@@ -156,13 +156,14 @@ const tanya = k => `<button type="button" class="tanya" data-act="tanya" data-v=
 
 const hariIni = iso(new Date());
 let tab = ui('tab') || 'beranda';
-if (!['beranda', 'jadwal', 'kas', 'masuk', 'keluar', 'laba', 'atur'].includes(tab)) tab = 'beranda';
+if (!['beranda', 'jadwal', 'progres', 'kas', 'masuk', 'keluar', 'laba', 'atur'].includes(tab)) tab = 'beranda';
 let filterKas = 'semua', cari = '', animasi = true;
 let hariPilih = hariIni;
 let bulanKal = keTgl(hariIni.slice(0, 8) + '01');
 let periode = hariIni.slice(0, 7); // 'YYYY-MM' atau 'semua'
 let filterKeluar = 'semua';
 let lapTab = ui('lapTab') || 'ringkasan';
+let progresPilih = null;   // index STATUS_JADWAL yang dibuka di tab Progres
 
 const daftarJenis = () => [...new Set(S.paket.map(p => p.jenis.trim()))];
 const paketDari = jenis => S.paket.filter(p => p.jenis.trim() === jenis);
@@ -236,7 +237,7 @@ function render() {
   document.title = S.setelan.nama || 'Studio Foto';
   const navAktif = tab === 'masuk' || tab === 'keluar' ? 'kas' : tab;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === navAktif));
-  const v = { beranda: viewBeranda, jadwal: viewJadwal, kas: viewKas, masuk: viewMasuk, keluar: viewKeluar, laba: viewLaporan, atur: viewAtur }[tab] || viewBeranda;
+  const v = { beranda: viewBeranda, jadwal: viewJadwal, progres: viewProgres, kas: viewKas, masuk: viewMasuk, keluar: viewKeluar, laba: viewLaporan, atur: viewAtur }[tab] || viewBeranda;
   const view = $('#view');
   view.innerHTML = v();
   view.classList.toggle('animasi', animasi); animasi = false;   // animasi masuk hanya saat pindah halaman
@@ -270,6 +271,31 @@ function kartuJadwal(j, tampilTgl) {
       <div class="chips"><span class="chip st${i}">${esc(j.status)}</span>${mj ? (mj.bayar === 'dp' ? `<span class="chip dp">DP ${rp(mj.dp)}</span><button class="chip-btn" data-act="bukaLunas" data-id="${mj.id}">Lunas</button>` : '<span class="chip ok">Lunas</span>') : `<button class="chip-btn" data-act="dpKartu" data-id="${j.id}">+ DP</button>`}</div></div>
     <div class="bk-rp tnum">${rp(totalBooking(j))}</div>
   </div>`;
+}
+
+// ---------- Progres pengerjaan ----------
+// Tab sendiri: pilih tahap dulu → baru muncul booking yang sedang di tahap itu.
+const IKON_PROGRES = ['📷', '🎨', '☁️', '📨', '✅'];
+const KET_PROGRES = ['Jadwal sudah dibuat, belum sesi foto', 'Foto sudah diambil, tinggal edit', 'Sudah diedit, belum diupload', 'Sudah diupload, belum dikirim ke customer', 'Hasil sudah diterima customer'];
+function viewProgres() {
+  const per = STATUS_JADWAL.map(st => S.jadwal.filter(j => (j.status || STATUS_JADWAL[0]) === st));
+  const opsi = STATUS_JADWAL.map((st, i) => `<button class="pg-opsi st${i} ${progresPilih === i ? 'on' : ''}" data-act="pilihProgres" data-v="${i}">
+      <span class="pg-ik" aria-hidden="true">${IKON_PROGRES[i]}</span>
+      <span class="pg-tx"><b>${esc(st)}</b><small>${KET_PROGRES[i]}</small></span>
+      <span class="pg-n tnum">${per[i].length}</span></button>`).join('');
+  let isi = '';
+  if (progresPilih !== null) {
+    const i = progresPilih, st = STATUS_JADWAL[i];
+    const list = per[i].slice().sort((a, b) => i === 0 ? (a.tanggal + a.jam).localeCompare(b.tanggal + b.jam) : (b.tanggal + b.jam).localeCompare(a.tanggal + a.jam));
+    isi = `<section class="card pg-list" id="pgList">
+      <div class="kal-head"><h2>${IKON_PROGRES[i]} ${esc(st)}</h2><span class="chip st${i}">${list.length} booking</span></div>
+      <div class="daftar">${list.length ? list.map(j => `<div class="pg-item">${kartuJadwal(j, true)}
+        <div class="pg-aksi">${i > 0 ? `<button class="btn btn-kecil" data-act="geserProgres" data-id="${j.id}" data-d="-1" title="Kembali ke ${esc(STATUS_JADWAL[i - 1])}">‹ Mundur</button>` : '<span></span>'}
+        ${i < STATUS_JADWAL.length - 1 ? `<button class="btn btn-kecil btn-utama" data-act="geserProgres" data-id="${j.id}" data-d="1">Lanjut: ${esc(STATUS_JADWAL[i + 1])} ›</button>` : ''}</div></div>`).join('') : '<div class="kosong">Tidak ada booking di tahap ini.</div>'}</div>
+    </section>`;
+  }
+  return `<div class="judul"><div><h1>Progres</h1><div class="sub">Pilih tahap untuk melihat booking yang sedang di tahap itu</div></div></div>
+    <div class="pg-opsi-list">${opsi}</div>${isi}`;
 }
 
 function viewJadwal() {
@@ -927,7 +953,6 @@ function formJadwal() {
   const d = F;
   d.addon ||= {};
   const bentrok = d.jam ? S.jadwal.filter(j => j.id !== d.id && j.tanggal === d.tanggal && j.jam === d.jam) : [];
-  const iStatus = STATUS_JADWAL.indexOf(d.status);
   const addonRows = barisAddon(d), manualRows = '';
   return `${kepala(d.id ? 'Ubah booking' : 'Booking baru')}
   <div class="sheet-body form-dua">
@@ -969,7 +994,6 @@ function formJadwal() {
             <button type="button" class="btn btn-utama btn-kecil" data-act="bukaLunas" data-id="${mj.id}">Lunas</button><button type="button" class="btn btn-kecil" data-act="editMasuk" data-id="${mj.id}">Lihat</button></div>`;
         return `<div class="bayar-status ok"><div><b>Lunas ${rp(jumlahMasuk(mj))}</b><span>tgl ${esc(tglPendek(mj.tanggal))}${mj.dp ? ' · pernah DP ' + rp(mj.dp) : ''}</span></div><button type="button" class="btn btn-kecil" data-act="editMasuk" data-id="${mj.id}">Lihat</button></div>`;
       })())}
-      ${d.id ? bagian(6, 'Status', 'Progres pengerjaan', `<div class="langkah">${STATUS_JADWAL.map((s, i) => `<button type="button" class="${i < iStatus ? 'lewat' : i === iStatus ? 'on' : ''}" data-act="setF" data-k="status" data-v="${esc(s)}"><i>${i < iStatus ? '✓' : i + 1}</i>${esc(s)}</button>`).join('')}</div>`) : ''}
     </div>
     <aside class="form-kanan"><div class="kanan-sticky">${ringkasJadwal()}</div>${kirimCustomer(d)}</aside>
   </div>
@@ -1353,6 +1377,12 @@ const AKSI = {
   filterKeluar: el => { filterKeluar = el.dataset.v; render(); },
   exportCsv: el => exportCsv(el.dataset.j),
   tutup: tutupModal,
+  pilihProgres: el => { const i = Number(el.dataset.v); progresPilih = progresPilih === i ? null : i; render(); if (progresPilih !== null) setTimeout(() => $('#pgList')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); },
+  geserProgres: el => {
+    const j = S.jadwal.find(x => x.id === el.dataset.id); if (!j) return;
+    const i = Math.max(0, Math.min(STATUS_JADWAL.length - 1, STATUS_JADWAL.indexOf(j.status || STATUS_JADWAL[0]) + Number(el.dataset.d)));
+    j.status = STATUS_JADWAL[i]; cap(j); simpan(); render(); toast(j.customer + ' → ' + j.status);
+  },
   setF: el => {
     const k = el.dataset.k, v = el.dataset.v;
     F[k] = v;
