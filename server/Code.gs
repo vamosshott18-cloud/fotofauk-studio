@@ -53,6 +53,7 @@ function doGet() {
 // {aksi:'tarik', sejak} → hanya kembalikan perubahan
 // {aksi:'gantiPin', pinBaru} → ganti PIN studio (semua perangkat lain diminta PIN baru)
 // {aksi:'buatPin', pinBaru} → hanya bisa selama belum ada PIN (perangkat pertama)
+// {aksi:'vapid'|'simpanVapid'|'langganan'|'berhenti'|'pushInfo'|'pushTeruskan'} → notifikasi booking (lihat bawah)
 // Semua permintaan lain wajib membawa pin.
 function doPost(e) {
   let req;
@@ -75,6 +76,7 @@ function doPost(e) {
       PropertiesService.getScriptProperties().setProperty('PIN', baru);
       return json_({ ok: true });
     }
+    if (req.aksi && NOTIF_AKSI[req.aksi]) return json_(NOTIF_AKSI[req.aksi](req));
     const sh = sheet_(), sekarang = Date.now();
     if (req.aksi === 'kirim' && Array.isArray(req.rows) && req.rows.length) {
       const nilai = sh.getDataRange().getValues(), letak = {};
@@ -118,4 +120,64 @@ function backupMingguan_() {
 
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ---------- Notifikasi booking (Web Push) ----------
+// Langganan tiap perangkat disimpan di tab "notif". Kunci VAPID dibuat oleh perangkat pertama (Script Properties).
+// Enkripsi + tanda tangan dikerjakan di browser pengirim; server hanya meneruskan ke layanan push yang terdaftar.
+const NAMA_NOTIF = 'notif';
+function sheetNotif_() {
+  const ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+  let sh = ss.getSheetByName(NAMA_NOTIF);
+  if (!sh) { sh = ss.insertSheet(NAMA_NOTIF); sh.appendRow(['endpoint', 'json', 'nama', 'perangkat', 'diubah']); sh.setFrozenRows(1); }
+  return sh;
+}
+function daftarLangganan_() {
+  return sheetNotif_().getDataRange().getValues().slice(1).filter(v => v[0]).map(v => { const j = JSON.parse(v[1]); return { endpoint: j.endpoint, keys: j.keys, nama: v[2], perangkat: v[3] }; });
+}
+function hapusLangganan_(endpoints) {
+  const sh = sheetNotif_(), v = sh.getDataRange().getValues();
+  for (let i = v.length - 1; i >= 1; i--) if (endpoints.indexOf(v[i][0]) >= 0) sh.deleteRow(i + 1);
+}
+const NOTIF_AKSI = {
+  vapid: () => ({ ok: true, pub: PropertiesService.getScriptProperties().getProperty('VAPID_PUB') || '' }),
+  simpanVapid: req => {
+    const props = PropertiesService.getScriptProperties();
+    if (!props.getProperty('VAPID_PUB') && req.pub && req.jwk && req.jwk.d) { props.setProperty('VAPID_PUB', String(req.pub)); props.setProperty('VAPID_JWK', JSON.stringify(req.jwk)); }
+    return { ok: true, pub: props.getProperty('VAPID_PUB') };
+  },
+  langganan: req => {
+    const sub = req.sub || {};
+    if (!/^https:\/\//.test(sub.endpoint || '') || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) return { ok: false, error: 'langganan' };
+    const sh = sheetNotif_(), v = sh.getDataRange().getValues(), baris = [sub.endpoint, JSON.stringify({ endpoint: sub.endpoint, keys: sub.keys }), String(req.nama || ''), String(req.perangkat || ''), new Date()];
+    for (let i = 1; i < v.length; i++) if (v[i][0] === sub.endpoint) { sh.getRange(i + 1, 1, 1, 5).setValues([baris]); return { ok: true }; }
+    sh.appendRow(baris);
+    return { ok: true };
+  },
+  berhenti: req => { hapusLangganan_([String(req.endpoint || '')]); return { ok: true }; },
+  pushInfo: () => {
+    const props = PropertiesService.getScriptProperties(), jwk = props.getProperty('VAPID_JWK');
+    return { ok: true, pub: props.getProperty('VAPID_PUB') || '', jwk: jwk ? JSON.parse(jwk) : null, langganan: daftarLangganan_() };
+  },
+  pushTeruskan: req => {
+    const terdaftar = {}; daftarLangganan_().forEach(s => { terdaftar[s.endpoint] = 1; });
+    const kirim = (req.req || []).filter(r => terdaftar[r.endpoint]).slice(0, 50);
+    if (!kirim.length) return { ok: true, terkirim: 0 };
+    const hasil = UrlFetchApp.fetchAll(kirim.map(r => ({
+      url: r.endpoint, method: 'post', contentType: 'application/octet-stream', muteHttpExceptions: true,
+      headers: { TTL: '86400', Urgency: 'high', 'Content-Encoding': 'aes128gcm', Authorization: String(r.auth) },
+      payload: Utilities.base64Decode(r.body)
+    })));
+    const kode = hasil.map(h => h.getResponseCode()), mati = [];
+    kode.forEach((c, i) => { if (c === 404 || c === 410) mati.push(kirim[i].endpoint); });
+    if (mati.length) hapusLangganan_(mati);
+    return { ok: true, terkirim: kode.filter(c => c >= 200 && c < 300).length, kode };
+  }
+};
+
+// Jalankan sekali dari editor setelah menempel kode ini: memberi izin "hubungkan ke layanan luar" (UrlFetchApp) & buat tab notif.
+function izinNotif() {
+  sheetNotif_();
+  UrlFetchApp.fetch('https://www.google.com/generate_204', { muteHttpExceptions: true });
+  Logger.log('Siap: tab notif ada, izin UrlFetch diberikan.');
 }

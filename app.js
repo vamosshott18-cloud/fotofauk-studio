@@ -379,6 +379,7 @@ function viewBeranda() {
   return `<div class="beranda">
   <label class="cari-hp"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="cariBeranda" type="search" placeholder="Cari customer, paket, pengeluaran" autocomplete="off"></label>
   <div class="sapa"><b>${sapa} <span class="lambai">👋</span></b><small>${esc(tglPanjang(hariIni))}</small></div>
+  ${typeof bannerNotif === 'function' ? bannerNotif() : ''}
   <section class="saldo">
     <small>Bersih ${BULAN[D.mo - 1]}</small>
     <b data-hitung="${D.bersih}">${rp(D.bersih)}</b>
@@ -863,6 +864,7 @@ function viewAtur() {
       <div class="scroll-x"><table class="tabel tabel-in tabel-cetak"><thead><tr><th>Ukuran</th>${KOLOM_CETAK.map(k => `<th>${k}</th>`).join('')}</tr></thead><tbody>${cetakRows}</tbody></table></div>
       <div class="catatan">3R–18R pakai bahan bingkai 3 cm, 20R–36R pakai 4,5 cm / 6 cm. Kosong = tidak tersedia.</div></div>
     ${typeof kartuDatabase === 'function' ? kartuDatabase() : ''}
+    ${typeof kartuNotif === 'function' ? kartuNotif() : ''}
     <div class="card lebar"><h2>Tempat sampah <small class="bantu">· disimpan 30 hari</small></h2>
       ${(S.sampah || []).length ? [...S.sampah].sort((x, y) => y.waktu.localeCompare(x.waktu)).map(x => `<div class="baris"><div class="isi"><b>${esc({ jadwal: 'Jadwal', masuk: 'Pemasukan', keluar: 'Pengeluaran' }[x.koleksi])} · ${esc(x.data.customer || x.data.nama || '—')}</b><span>dihapus ${x.oleh ? esc(x.oleh) + ' · ' : ''}${jamTgl(x.waktu)}${x.ikut?.length ? ' · + ' + x.ikut.length + ' pengeluaran otomatis' : ''}</span></div><button class="btn btn-kecil" data-act="pulihkan" data-id="${x.id}">Pulihkan</button></div>`).join('')
         : '<div class="kosong" style="padding:14px">Kosong. Data yang dihapus muncul di sini dan bisa dipulihkan.</div>'}</div>
@@ -1036,7 +1038,7 @@ function simpanJadwalData() {
   if (bayar === 'dp' && !(dp > 0) && !pemasukanJadwal(F)) return toast('Isi nominal DP'), null;
   const j = { ...F, customer: F.customer.trim(), kontak: F.kontak.trim(), ig: F.ig.trim() };
   delete j.bayarAwal; delete j.dpAwal; delete j.dpAwalManual;
-  if (!j.id) { j.id = uid(); cap(j, true); S.jadwal.push(j); } else { cap(j); S.jadwal[S.jadwal.findIndex(x => x.id === j.id)] = j; }
+  if (!j.id) { j.id = uid(); cap(j, true); S.jadwal.push(j); if (typeof kabariBooking === 'function') setTimeout(() => kabariBooking(j), 0); } else { cap(j); S.jadwal[S.jadwal.findIndex(x => x.id === j.id)] = j; }
   if (!pemasukanJadwal(j) && (bayar === 'dp' || bayar === 'lunas')) j._bayar = buatPemasukanJadwal(j, bayar, dp);
   simpan(); hariPilih = j.tanggal; bulanKal = keTgl(j.tanggal.slice(0, 8) + '01');
   return j;
